@@ -1,14 +1,14 @@
 export default defineEventHandler(async (event) => {
-  const id = getRouterParam(event, 'id')
-  if (!id) {
+  const name = getRouterParam(event, 'name')
+  if (!name) {
     throw createError({
       statusCode: 400,
-      message: '缺少服务器 ID',
+      message: '缺少服务器名称',
     })
   }
 
   const config = getMCPConfig()
-  const existingServer = config.servers.find(s => s.id === id)
+  const existingServer = config.servers.find(s => s.name === name)
   if (!existingServer) {
     throw createError({
       statusCode: 404,
@@ -17,15 +17,15 @@ export default defineEventHandler(async (event) => {
   }
 
   // 删除服务器
-  deleteMCPServer(id)
-  await mcpManager.removeServer(id)
+  deleteMCPServer(name)
+  await mcpManager.removeServer(name)
 
   // 返回完整的 MCP 配置数据
   const updatedConfig = getMCPConfig()
   const statuses = mcpManager.getAllServerStatuses()
 
   const servers = updatedConfig.servers.map((server: MCPServerConfig) => {
-    const status = statuses.find(s => s.id === server.id)
+    const status = statuses.find(s => s.name === server.name)
     return {
       ...server,
       connected: status?.connected ?? false,

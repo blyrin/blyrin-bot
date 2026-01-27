@@ -24,7 +24,7 @@ export default defineEventHandler(async (event) => {
       if (server.enabled) {
         mcpManager.addServer(server)
         try {
-          await mcpManager.connectServer(server.id)
+          await mcpManager.connectServer(server.name)
         } catch (err) {
           logger.error('MCP', `连接 ${server.name} 失败`, { error: String(err) })
         }
@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
   const statuses = mcpManager.getAllServerStatuses()
 
   const servers = config.servers.map((server: any) => {
-    const status = statuses.find(s => s.id === server.id)
+    const status = statuses.find(s => s.name === server.name)
     return {
       ...server,
       connected: status?.connected ?? false,

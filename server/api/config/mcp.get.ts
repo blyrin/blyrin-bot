@@ -4,7 +4,7 @@ export default defineEventHandler(async () => {
 
   // 合并配置和状态
   const servers = config.servers.map((server: any) => {
-    const status = statuses.find(s => s.id === server.id)
+    const status = statuses.find(s => s.name === server.name)
     return {
       ...server,
       connected: status?.connected ?? false,

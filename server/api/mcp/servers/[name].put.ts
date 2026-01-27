@@ -1,8 +1,7 @@
 import z from 'zod'
 
-// 部分更新
+// 部分更新（不允许修改 name）
 const MCPServerUpdateSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
   enabled: z.boolean().optional(),
   transportType: z.enum(['streamable-http', 'sse', 'stdio']).optional(),
   url: z.string().url().max(500).optional(),
@@ -16,11 +15,11 @@ const MCPServerUpdateSchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const id = getRouterParam(event, 'id')
-  if (!id) {
+  const name = getRouterParam(event, 'name')
+  if (!name) {
     throw createError({
       statusCode: 400,
-      message: '缺少服务器 ID',
+      message: '缺少服务器名称',
     })
   }
 
@@ -36,7 +35,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const config = getMCPConfig()
-  const existingServer = config.servers.find(s => s.id === id)
+  const existingServer = config.servers.find(s => s.name === name)
   if (!existingServer) {
     throw createError({
       statusCode: 404,
@@ -46,8 +45,8 @@ export default defineEventHandler(async (event) => {
 
   // 更新服务器配置
   const updatedServer = { ...existingServer, ...result.data } as MCPServerConfig
-  updateMCPServer(id, updatedServer)
-  mcpManager.updateServerConfig(id, updatedServer)
+  updateMCPServer(name, updatedServer)
+  mcpManager.updateServerConfig(name, updatedServer)
 
   // 检查是否需要重新连接
   const enabledChanged = result.data.enabled !== undefined && result.data.enabled !== existingServer.enabled
@@ -65,7 +64,7 @@ export default defineEventHandler(async (event) => {
 
     // 先断开现有连接
     try {
-      await mcpManager.disconnectServer(id)
+      await mcpManager.disconnectServer(name)
     } catch {
       // 忽略断开连接错误
     }
@@ -74,9 +73,9 @@ export default defineEventHandler(async (event) => {
     if (shouldBeConnected) {
       mcpManager.addServer(updatedServer)
       try {
-        await mcpManager.connectServer(id)
+        await mcpManager.connectServer(name)
       } catch (err) {
-        logger.error('MCP', `连接 ${id} 失败`, { error: String(err) })
+        logger.error('MCP', `连接 ${name} 失败`, { error: String(err) })
       }
     }
   }
@@ -86,7 +85,7 @@ export default defineEventHandler(async (event) => {
   const statuses = mcpManager.getAllServerStatuses()
 
   const servers = updatedConfig.servers.map((server: MCPServerConfig) => {
-    const status = statuses.find(s => s.id === server.id)
+    const status = statuses.find(s => s.name === server.name)
     return {
       ...server,
       connected: status?.connected ?? false,

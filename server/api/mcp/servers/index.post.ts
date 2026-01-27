@@ -1,10 +1,10 @@
 import z from 'zod'
 
-// 创建服务器 (ID 自动生成)
+// 创建服务器
 const MCPServerCreateSchema = z.discriminatedUnion('transportType', [
-  MCPServerStreamableHTTPSchema.extend({ id: z.string().optional(), enabled: z.boolean().optional() }),
-  MCPServerSSESchema.extend({ id: z.string().optional(), enabled: z.boolean().optional() }),
-  MCPServerStdioSchema.extend({ id: z.string().optional(), enabled: z.boolean().optional() }),
+  MCPServerStreamableHTTPSchema.extend({ enabled: z.boolean().optional() }),
+  MCPServerSSESchema.extend({ enabled: z.boolean().optional() }),
+  MCPServerStdioSchema.extend({ enabled: z.boolean().optional() }),
 ])
 
 export default defineEventHandler(async (event) => {
@@ -19,10 +19,18 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 自动生成 id 和设置 enabled 默认值
+  // 检查名称是否已存在
+  let config = getMCPConfig()
+  if (config.servers.some(s => s.name === result.data.name)) {
+    throw createError({
+      statusCode: 400,
+      message: '服务器名称已存在',
+    })
+  }
+
+  // 设置 enabled 默认值
   const serverConfig: MCPServerConfig = {
     ...result.data,
-    id: result.data.id || `mcp-${Date.now()}`,
     enabled: result.data.enabled ?? true,
   } as MCPServerConfig
 
@@ -30,12 +38,12 @@ export default defineEventHandler(async (event) => {
   mcpManager.addServer(serverConfig)
 
   // 如果服务器已启用且全局 MCP 已启用，自动连接
-  let config = getMCPConfig()
+  config = getMCPConfig()
   if (serverConfig.enabled && config.enabled) {
     try {
-      await mcpManager.connectServer(serverConfig.id)
+      await mcpManager.connectServer(serverConfig.name)
     } catch (err) {
-      logger.error('MCP', `连接 ${serverConfig.id} 失败`, { error: String(err) })
+      logger.error('MCP', `连接 ${serverConfig.name} 失败`, { error: String(err) })
     }
   }
 
@@ -44,7 +52,7 @@ export default defineEventHandler(async (event) => {
   const statuses = mcpManager.getAllServerStatuses()
 
   const servers = config.servers.map((server: MCPServerConfig) => {
-    const status = statuses.find(s => s.id === server.id)
+    const status = statuses.find(s => s.name === server.name)
     return {
       ...server,
       connected: status?.connected ?? false,

@@ -13,7 +13,6 @@ interface ToolsApiData {
 type MCPTransportType = 'streamable-http' | 'sse' | 'stdio'
 
 interface MCPServerWithStatus {
-  id: string
   name: string
   enabled: boolean
   transportType: MCPTransportType
@@ -72,7 +71,7 @@ const serverForm = ref<ServerFormData>({
 
 // 确认弹窗状态
 const confirmOpen = ref(false)
-const pendingRemoveServerId = ref<string | null>(null)
+const pendingRemoveServerName = ref<string | null>(null)
 
 const transportOptions = [
   { label: 'Streamable HTTP', value: 'streamable-http' },
@@ -279,7 +278,7 @@ async function handleUpdateServer() {
       }
     }
 
-    const res = await $fetch(`/api/mcp/servers/${editingServer.value.id}`, {
+    const res = await $fetch(`/api/mcp/servers/${editingServer.value.name}`, {
       method: 'PUT',
       body: updates,
     })
@@ -296,16 +295,16 @@ async function handleUpdateServer() {
   }
 }
 
-function showRemoveServerConfirm(serverId: string) {
-  pendingRemoveServerId.value = serverId
+function showRemoveServerConfirm(serverName: string) {
+  pendingRemoveServerName.value = serverName
   confirmOpen.value = true
 }
 
 async function handleRemoveServer() {
-  if (!pendingRemoveServerId.value) return
+  if (!pendingRemoveServerName.value) return
 
   try {
-    const res = await $fetch(`/api/mcp/servers/${pendingRemoveServerId.value}`, {
+    const res = await $fetch(`/api/mcp/servers/${pendingRemoveServerName.value}`, {
       method: 'DELETE',
     })
     if (res.success) {
@@ -315,14 +314,14 @@ async function handleRemoveServer() {
   } catch {
     toast.add({ title: '删除失败', color: 'error' })
   } finally {
-    pendingRemoveServerId.value = null
+    pendingRemoveServerName.value = null
   }
 }
 
-async function handleConnectServer(serverId: string) {
-  connectingServers.value.add(serverId)
+async function handleConnectServer(serverName: string) {
+  connectingServers.value.add(serverName)
   try {
-    const res = await $fetch(`/api/mcp/servers/${serverId}/connect`, {
+    const res = await $fetch(`/api/mcp/servers/${serverName}/connect`, {
       method: 'POST',
     })
     if (res.success) {
@@ -334,13 +333,13 @@ async function handleConnectServer(serverId: string) {
   } catch {
     toast.add({ title: '连接失败', color: 'error' })
   } finally {
-    connectingServers.value.delete(serverId)
+    connectingServers.value.delete(serverName)
   }
 }
 
-async function handleDisconnectServer(serverId: string) {
+async function handleDisconnectServer(serverName: string) {
   try {
-    const res = await $fetch(`/api/mcp/servers/${serverId}/disconnect`, {
+    const res = await $fetch(`/api/mcp/servers/${serverName}/disconnect`, {
       method: 'POST',
     })
     if (res.success) {
@@ -352,9 +351,24 @@ async function handleDisconnectServer(serverId: string) {
   }
 }
 
-async function handleToolStateToggle(serverId: string, toolName: string, enabled: boolean) {
+async function handleServerEnabledToggle(serverName: string, enabled: boolean) {
   try {
-    const res = await $fetch(`/api/mcp/tools/${serverId}/${toolName}/enabled`, {
+    const res = await $fetch(`/api/mcp/servers/${serverName}`, {
+      method: 'PUT',
+      body: { enabled },
+    })
+    if (res.success) {
+      mcpData.value = res.data
+      toast.add({ title: enabled ? '服务器已启用' : '服务器已禁用', color: 'success' })
+    }
+  } catch {
+    toast.add({ title: '操作失败', color: 'error' })
+  }
+}
+
+async function handleToolStateToggle(serverName: string, toolName: string, enabled: boolean) {
+  try {
+    const res = await $fetch(`/api/mcp/tools/${serverName}/${toolName}/enabled`, {
       method: 'PUT',
       body: { enabled },
     })
@@ -366,11 +380,11 @@ async function handleToolStateToggle(serverId: string, toolName: string, enabled
   }
 }
 
-function toggleServerExpanded(serverId: string) {
-  if (expandedServers.value.has(serverId)) {
-    expandedServers.value.delete(serverId)
+function toggleServerExpanded(serverName: string) {
+  if (expandedServers.value.has(serverName)) {
+    expandedServers.value.delete(serverName)
   } else {
-    expandedServers.value.add(serverId)
+    expandedServers.value.add(serverName)
   }
 }
 
@@ -508,20 +522,21 @@ function startEditServer(server: MCPServerWithStatus) {
 
             <div v-else class="space-y-4">
               <!-- 服务器列表 -->
-              <div v-for="server in mcpData?.servers" :key="server.id" class="border border-neutral-200 dark:border-neutral-700 rounded-md">
+              <div v-for="server in mcpData?.servers" :key="server.name" class="border border-neutral-200 dark:border-neutral-700 rounded-md">
                 <div
                   class="flex flex-col md:flex-row md:items-center gap-2 justify-between p-4 cursor-pointer"
-                  @click="toggleServerExpanded(server.id)"
+                  @click="toggleServerExpanded(server.name)"
                 >
                   <div class="flex items-center gap-2">
                     <UIcon
-                      :name="expandedServers.has(server.id) ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
+                      :name="expandedServers.has(server.name) ? 'i-heroicons-chevron-down' : 'i-heroicons-chevron-right'"
                       class="w-5 h-5 text-neutral-500 dark:text-neutral-400"
                     />
                     <div>
                       <div class="flex items-center gap-2">
                         <span class="font-medium">{{ server.name }}</span>
-                        <UBadge :color="server.connected ? 'success' : 'info'" size="xs">
+                        <UBadge v-if="!server.enabled" color="neutral" size="xs">已禁用</UBadge>
+                        <UBadge v-else :color="server.connected ? 'success' : 'info'" size="xs">
                           {{ server.connected ? '已连接' : '未连接' }}
                         </UBadge>
                         <span class="text-xs text-neutral-400">{{ server.transportType }}</span>
@@ -532,31 +547,39 @@ function startEditServer(server: MCPServerWithStatus) {
                       <p v-if="server.error" class="text-sm text-red-500 dark:text-red-400">{{ server.error }}</p>
                     </div>
                   </div>
-                  <div class="flex items-center justify-end" @click.stop>
+                  <div class="flex items-center justify-end gap-2" @click.stop>
+                    <USwitch
+                      class="mr-2"
+                      :disabled="!mcpData?.enabled"
+                      :model-value="server.enabled"
+                      @update:model-value="(enabled) => handleServerEnabledToggle(server.name, enabled)"
+                    />
                     <UButton class="cursor-pointer" size="xs" variant="ghost" @click="startEditServer(server)">
                       <UIcon class="w-5 h-5" name="i-heroicons-pencil" />
                     </UButton>
-                    <UButton class="cursor-pointer" size="xs" variant="ghost" @click="showRemoveServerConfirm(server.id)">
-                      <UIcon class="w-5 h-5 text-red-500 mr-2" name="i-heroicons-trash" />
+                    <UButton class="cursor-pointer" size="xs" variant="ghost" @click="showRemoveServerConfirm(server.name)">
+                      <UIcon class="w-5 h-5 text-red-500" name="i-heroicons-trash" />
                     </UButton>
                     <UButton
                       v-if="server.connected"
                       class="cursor-pointer"
                       size="xs"
                       variant="soft"
-                      @click="handleDisconnectServer(server.id)"
+                      color="error"
+                      @click="handleDisconnectServer(server.name)"
                     >
                       <UIcon class="w-5 h-5" name="i-heroicons-stop" />
                       断开
                     </UButton>
                     <UButton
                       v-else
-                      :disabled="!mcpData?.enabled"
-                      :loading="connectingServers.has(server.id)"
+                      :disabled="!mcpData?.enabled || !server.enabled"
+                      :loading="connectingServers.has(server.name)"
                       class="cursor-pointer"
                       size="xs"
                       variant="soft"
-                      @click="handleConnectServer(server.id)"
+                      color="success"
+                      @click="handleConnectServer(server.name)"
                     >
                       <UIcon class="w-5 h-5" name="i-heroicons-play" />
                       连接
@@ -565,23 +588,23 @@ function startEditServer(server: MCPServerWithStatus) {
                 </div>
 
                 <!-- 展开的工具列表 -->
-                <div v-if="expandedServers.has(server.id) && server.connected"
+                <div v-if="expandedServers.has(server.name) && server.connected"
                      class="border-t border-neutral-200 dark:border-neutral-700 px-4 py-3 bg-neutral-50 dark:bg-neutral-800 rounded-md">
                   <p class="text-sm font-medium mb-2">可用工具 ({{ server.tools.length }})</p>
                   <div v-if="server.tools.length > 0" class="space-y-2">
                     <div
                       v-for="tool in server.tools"
                       :key="tool.name"
-                      class="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded-md border border-neutral-200 dark:border-neutral-700"
+                      class="flex items-center justify-between px-3 py-2 bg-white dark:bg-neutral-900 rounded-md border border-neutral-200 dark:border-neutral-700"
                     >
-                      <div>
-                        <p class="font-medium text-sm">{{ tool.name }}</p>
-                        <p class="text-xs text-neutral-500 dark:text-neutral-400">{{ tool.description }}</p>
+                      <div class="px-1 text-xs">
+                        <p class="font-medium">{{ tool.name }}</p>
+                        <p class="text-neutral-500 dark:text-neutral-400">{{ tool.description }}</p>
                       </div>
                       <USwitch
                         :disabled="!mcpData?.enabled"
-                        :model-value="mcpData?.toolStates[`${server.id}:${tool.name}`] !== false"
-                        @update:model-value="(enabled) => handleToolStateToggle(server.id, tool.name, enabled)"
+                        :model-value="mcpData?.toolStates[`${server.name}:${tool.name}`] !== false"
+                        @update:model-value="(enabled) => handleToolStateToggle(server.name, tool.name, enabled)"
                       />
                     </div>
                   </div>

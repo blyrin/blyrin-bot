@@ -18,27 +18,27 @@ const RECONNECT_BASE_DELAY = 5000 // 5 秒
 
 class MCPClientManager {
   private servers = new Map<string, ServerState>()
-  private onToolsUpdated?: (serverId: string, tools: MCPToolDefinition[]) => void
+  private onToolsUpdated?: (serverName: string, tools: MCPToolDefinition[]) => void
 
-  setToolsUpdatedCallback(callback: (serverId: string, tools: MCPToolDefinition[]) => void): void {
+  setToolsUpdatedCallback(callback: (serverName: string, tools: MCPToolDefinition[]) => void): void {
     this.onToolsUpdated = callback
   }
 
   addServer(config: MCPServerConfig): void {
-    if (this.servers.has(config.id)) {
-      logger.warn('MCP', `服务器 ${config.id} 已存在，正在更新配置`)
+    if (this.servers.has(config.name)) {
+      logger.warn('MCP', `服务器 ${config.name} 已存在，正在更新配置`)
     }
-    this.servers.set(config.id, {
+    this.servers.set(config.name, {
       config,
       transport: null,
       tools: [],
       reconnectAttempts: 0,
     })
-    logger.info('MCP', `已添加 MCP 服务器: ${config.name} (${config.id})`)
+    logger.info('MCP', `已添加 MCP 服务器: ${config.name}`)
   }
 
-  async removeServer(serverId: string): Promise<void> {
-    const state = this.servers.get(serverId)
+  async removeServer(serverName: string): Promise<void> {
+    const state = this.servers.get(serverName)
     if (state) {
       // 清除重连定时器
       if (state.reconnectTimer) {
@@ -48,30 +48,30 @@ class MCPClientManager {
         try {
           await state.transport.disconnect()
         } catch (err) {
-          logger.error('MCP', `断开服务器 ${serverId} 连接时出错`, { error: String(err) })
+          logger.error('MCP', `断开服务器 ${serverName} 连接时出错`, { error: String(err) })
         }
       }
-      this.servers.delete(serverId)
-      logger.info('MCP', `已移除 MCP 服务器: ${serverId}`)
+      this.servers.delete(serverName)
+      logger.info('MCP', `已移除 MCP 服务器: ${serverName}`)
     }
   }
 
-  updateServerConfig(serverId: string, config: MCPServerConfig): void {
-    const state = this.servers.get(serverId)
+  updateServerConfig(serverName: string, config: MCPServerConfig): void {
+    const state = this.servers.get(serverName)
     if (state) {
       state.config = config
-      logger.info('MCP', `已更新服务器 ${serverId} 的配置`)
+      logger.info('MCP', `已更新服务器 ${serverName} 的配置`)
     }
   }
 
-  async connectServer(serverId: string): Promise<void> {
-    const state = this.servers.get(serverId)
+  async connectServer(serverName: string): Promise<void> {
+    const state = this.servers.get(serverName)
     if (!state) {
-      throw new Error(`Server ${serverId} not found`)
+      throw new Error(`Server ${serverName} not found`)
     }
 
     if (state.transport?.isConnected()) {
-      logger.info('MCP', `服务器 ${serverId} 已处于连接状态`)
+      logger.info('MCP', `服务器 ${serverName} 已处于连接状态`)
       return
     }
 
@@ -93,31 +93,31 @@ class MCPClientManager {
 
       // 获取工具列表
       state.tools = await transport.listTools()
-      logger.info('MCP', `服务器 ${serverId} 连接成功，${state.tools.length} 个工具可用`)
+      logger.info('MCP', `服务器 ${serverName} 连接成功，${state.tools.length} 个工具可用`)
 
       // 通知工具列表更新
       if (this.onToolsUpdated) {
-        this.onToolsUpdated(serverId, state.tools)
+        this.onToolsUpdated(serverName, state.tools)
       }
     } catch (error) {
       state.error = String(error)
       state.transport = null
       state.tools = []
-      logger.error('MCP', `连接服务器 ${serverId} 失败`, { error: String(error) })
+      logger.error('MCP', `连接服务器 ${serverName} 失败`, { error: String(error) })
 
       // 如果服务器已启用，尝试自动重连
       if (state.config.enabled) {
-        this.scheduleReconnect(serverId)
+        this.scheduleReconnect(serverName)
       }
 
       throw error
     }
   }
 
-  async disconnectServer(serverId: string): Promise<void> {
-    const state = this.servers.get(serverId)
+  async disconnectServer(serverName: string): Promise<void> {
+    const state = this.servers.get(serverName)
     if (!state) {
-      throw new Error(`Server ${serverId} not found`)
+      throw new Error(`Server ${serverName} not found`)
     }
 
     // 清除重连定时器
@@ -131,15 +131,15 @@ class MCPClientManager {
       await state.transport.disconnect()
       state.transport = null
       state.tools = []
-      logger.info('MCP', `服务器 ${serverId} 已断开连接`)
+      logger.info('MCP', `服务器 ${serverName} 已断开连接`)
     }
   }
 
   getAllServerStatuses(): MCPServerStatus[] {
     const statuses: MCPServerStatus[] = []
-    for (const [id, state] of this.servers) {
+    for (const [name, state] of this.servers) {
       statuses.push({
-        id,
+        name,
         connected: state.transport?.isConnected() ?? false,
         error: state.error,
         tools: state.tools,
@@ -148,42 +148,39 @@ class MCPClientManager {
     return statuses
   }
 
-  async callTool(serverId: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
-    const state = this.servers.get(serverId)
+  async callTool(serverName: string, toolName: string, args: Record<string, unknown>): Promise<unknown> {
+    const state = this.servers.get(serverName)
     if (!state) {
-      throw new Error(`Server ${serverId} not found`)
+      throw new Error(`Server ${serverName} not found`)
     }
 
     if (!state.transport?.isConnected()) {
-      throw new Error(`Server ${serverId} not connected`)
+      throw new Error(`Server ${serverName} not connected`)
     }
 
     return state.transport.callTool(toolName, args)
   }
 
   getEnabledTools(toolStates: Record<string, boolean>): Array<{
-    serverId: string;
     serverName: string;
     tool: MCPToolDefinition;
   }> {
     const enabledTools: Array<{
-      serverId: string;
       serverName: string;
       tool: MCPToolDefinition;
     }> = []
 
-    for (const [serverId, state] of this.servers) {
+    for (const [serverName, state] of this.servers) {
       if (!state.config.enabled || !state.transport?.isConnected()) {
         continue
       }
 
       for (const tool of state.tools) {
-        const key = `${serverId}:${tool.name}`
+        const key = `${serverName}:${tool.name}`
         // 默认启用，除非明确禁用（toolStates[key] === false）
         if (toolStates[key] !== false) {
           enabledTools.push({
-            serverId,
-            serverName: state.config.name,
+            serverName,
             tool,
           })
         }
@@ -195,34 +192,34 @@ class MCPClientManager {
 
   async disconnectAll(): Promise<void> {
     const promises: Promise<void>[] = []
-    for (const [serverId] of this.servers) {
-      promises.push(this.disconnectServer(serverId).catch(err => {
-        logger.error('MCP', `关闭服务器 ${serverId} 时出错`, { error: String(err) })
+    for (const [serverName] of this.servers) {
+      promises.push(this.disconnectServer(serverName).catch(err => {
+        logger.error('MCP', `关闭服务器 ${serverName} 时出错`, { error: String(err) })
       }))
     }
     await Promise.all(promises)
   }
 
-  private scheduleReconnect(serverId: string): void {
-    const state = this.servers.get(serverId)
+  private scheduleReconnect(serverName: string): void {
+    const state = this.servers.get(serverName)
     if (!state || !state.config.enabled) {
       return
     }
 
     // 如果已有重连定时器，不重复创建
     if (state.reconnectTimer) {
-      logger.debug('MCP', `服务器 ${serverId} 已有重连定时器，跳过`)
+      logger.debug('MCP', `服务器 ${serverName} 已有重连定时器，跳过`)
       return
     }
 
     if (state.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-      logger.warn('MCP', `服务器 ${serverId} 已达到最大重连次数 (${MAX_RECONNECT_ATTEMPTS})`)
+      logger.warn('MCP', `服务器 ${serverName} 已达到最大重连次数 (${MAX_RECONNECT_ATTEMPTS})`)
       return
     }
 
     state.reconnectAttempts++
     const delay = RECONNECT_BASE_DELAY * Math.pow(2, state.reconnectAttempts - 1) // 指数退避
-    logger.info('MCP', `计划在 ${delay}ms 后重连服务器 ${serverId} (尝试第 ${state.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} 次)`)
+    logger.info('MCP', `计划在 ${delay}ms 后重连服务器 ${serverName} (尝试第 ${state.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} 次)`)
 
     state.reconnectTimer = setTimeout(async () => {
       state.reconnectTimer = undefined
@@ -231,8 +228,8 @@ class MCPClientManager {
       }
 
       try {
-        await this.connectServer(serverId)
-        logger.info('MCP', `服务器 ${serverId} 重新连接成功`)
+        await this.connectServer(serverName)
+        logger.info('MCP', `服务器 ${serverName} 重新连接成功`)
       } catch {
         // connectServer 内部会再次调度重连
       }
@@ -280,7 +277,7 @@ export async function initializeMCP(): Promise<void> {
   for (const server of config.servers) {
     if (server.enabled) {
       try {
-        await mcpManager.connectServer(server.id)
+        await mcpManager.connectServer(server.name)
       } catch (error) {
         logger.error('MCP', `无法连接到服务器 ${server.name}`, { error: String(error) })
       }

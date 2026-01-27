@@ -194,7 +194,7 @@ async function executeMCPTool(
   }
 
   // 检查工具是否启用（默认启用，除非明确禁用）
-  const toolKey = `${server.id}:${toolName}`
+  const toolKey = `${server.name}:${toolName}`
   if (mcpConfig.toolStates[toolKey] === false) {
     return {
       success: false,
@@ -203,8 +203,8 @@ async function executeMCPTool(
   }
 
   try {
-    logger.info('Tools', `执行 MCP 工具: ${name}`, { serverId: server.id, toolName, args, context })
-    const result = await mcpManager.callTool(server.id, toolName, args)
+    logger.info('Tools', `执行 MCP 工具: ${name}`, { serverName: server.name, toolName, args, context })
+    const result = await mcpManager.callTool(server.name, toolName, args)
     logger.info('Tools', `MCP 工具执行完成: ${name}`, { result })
     return {
       success: true,

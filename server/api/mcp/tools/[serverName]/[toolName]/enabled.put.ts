@@ -5,10 +5,10 @@ const BodySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
-  const serverId = getRouterParam(event, 'serverId')
+  const serverName = getRouterParam(event, 'serverName')
   const toolName = getRouterParam(event, 'toolName')
 
-  if (!serverId || !toolName) {
+  if (!serverName || !toolName) {
     throw createError({
       statusCode: 400,
       message: '无效的参数',
@@ -24,13 +24,13 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  setMCPToolEnabled(serverId, toolName, result.data.enabled)
+  setMCPToolEnabled(serverName, toolName, result.data.enabled)
 
   const config = getMCPConfig()
   const statuses = mcpManager.getAllServerStatuses()
 
   const servers = config.servers.map((server: any) => {
-    const status = statuses.find(s => s.id === server.id)
+    const status = statuses.find(s => s.name === server.name)
     return {
       ...server,
       connected: status?.connected ?? false,

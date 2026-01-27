@@ -199,7 +199,6 @@ export interface OpenAIToolMessage {
 
 // MCP 服务器配置 - Streamable HTTP (默认)
 export interface MCPServerStreamableHTTPConfig {
-  id: string;
   name: string;
   enabled: boolean;
   transportType: 'streamable-http';
@@ -209,7 +208,6 @@ export interface MCPServerStreamableHTTPConfig {
 
 // MCP 服务器配置 - SSE (旧版兼容)
 export interface MCPServerSSEConfig {
-  id: string;
   name: string;
   enabled: boolean;
   transportType: 'sse';
@@ -219,7 +217,6 @@ export interface MCPServerSSEConfig {
 
 // MCP 服务器配置 - stdio
 export interface MCPServerStdioConfig {
-  id: string;
   name: string;
   enabled: boolean;
   transportType: 'stdio';
@@ -242,12 +239,12 @@ export interface MCPToolDefinition {
 export interface MCPConfig {
   enabled: boolean;
   servers: MCPServerConfig[];
-  toolStates: Record<string, boolean>;  // "serverId:toolName" -> enabled
+  toolStates: Record<string, boolean>;  // "serverName:toolName" -> enabled
 }
 
 // MCP 服务器运行时状态
 export interface MCPServerStatus {
-  id: string;
+  name: string;
   connected: boolean;
   error?: string;
   tools: MCPToolDefinition[];

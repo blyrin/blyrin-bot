@@ -323,12 +323,12 @@ export function addMCPServer(server: MCPServerConfig): MCPConfig {
   return current.mcp
 }
 
-export function updateMCPServer(serverId: string, updates: Partial<MCPServerConfig>): MCPConfig {
+export function updateMCPServer(serverName: string, updates: Partial<MCPServerConfig>): MCPConfig {
   const current = readConfig()
   if (!current.mcp) {
     current.mcp = { enabled: false, servers: [], toolStates: {} }
   }
-  const index = current.mcp.servers.findIndex(s => s.id === serverId)
+  const index = current.mcp.servers.findIndex(s => s.name === serverName)
   if (index !== -1) {
     current.mcp.servers[index] = { ...current.mcp.servers[index], ...updates } as MCPServerConfig
     writeConfig(current)
@@ -336,16 +336,16 @@ export function updateMCPServer(serverId: string, updates: Partial<MCPServerConf
   return current.mcp
 }
 
-export function deleteMCPServer(serverId: string): MCPConfig {
+export function deleteMCPServer(serverName: string): MCPConfig {
   const current = readConfig()
   if (!current.mcp) {
     current.mcp = { enabled: false, servers: [], toolStates: {} }
   }
-  current.mcp.servers = current.mcp.servers.filter(s => s.id !== serverId)
+  current.mcp.servers = current.mcp.servers.filter(s => s.name !== serverName)
   // 清理该服务器相关的工具状态
   const newToolStates: Record<string, boolean> = {}
   for (const [key, value] of Object.entries(current.mcp.toolStates)) {
-    if (!key.startsWith(`${serverId}:`)) {
+    if (!key.startsWith(`${serverName}:`)) {
       newToolStates[key] = value
     }
   }
@@ -354,12 +354,12 @@ export function deleteMCPServer(serverId: string): MCPConfig {
   return current.mcp
 }
 
-export function setMCPServerEnabled(serverId: string, enabled: boolean): MCPConfig {
+export function setMCPServerEnabled(serverName: string, enabled: boolean): MCPConfig {
   const current = readConfig()
   if (!current.mcp) {
     current.mcp = { enabled: false, servers: [], toolStates: {} }
   }
-  const server = current.mcp.servers.find(s => s.id === serverId)
+  const server = current.mcp.servers.find(s => s.name === serverName)
   if (server) {
     server.enabled = enabled
     writeConfig(current)
@@ -367,12 +367,12 @@ export function setMCPServerEnabled(serverId: string, enabled: boolean): MCPConf
   return current.mcp
 }
 
-export function setMCPToolEnabled(serverId: string, toolName: string, enabled: boolean): MCPConfig {
+export function setMCPToolEnabled(serverName: string, toolName: string, enabled: boolean): MCPConfig {
   const current = readConfig()
   if (!current.mcp) {
     current.mcp = { enabled: false, servers: [], toolStates: {} }
   }
-  current.mcp.toolStates[`${serverId}:${toolName}`] = enabled
+  current.mcp.toolStates[`${serverName}:${toolName}`] = enabled
   writeConfig(current)
   return current.mcp
 }
