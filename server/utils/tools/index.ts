@@ -15,6 +15,10 @@ const toolRegistry = new Map<string, RegisteredTool>()
 // 系统定义的所有工具元数据（用于管理界面显示）
 const ALL_TOOLS: Array<{ name: string; description: string }> = [
   {
+    name: 'subagent',
+    description: '委托子代理执行工具密集型任务，返回精简结果。适用于需要多次工具调用的复杂任务。',
+  },
+  {
     name: 'exa_search',
     description: '使用 Exa 搜索引擎搜索网络信息。可以搜索最新的新闻、文章、技术文档等内容。',
   },
@@ -244,6 +248,7 @@ export async function initializeTools() {
     import('./get-group-honor'),
     import('./set-essence-message'),
     import('./delete-message'),
+    import('./subagent'),
   ])
   toolsInitialized = true
   logger.info('Tools', '内置工具初始化完成')
