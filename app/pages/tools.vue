@@ -429,7 +429,7 @@ function startEditServer(server: MCPServerWithStatus) {
               <div
                 v-for="tool in toolsData.tools"
                 :key="tool.name"
-                class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2 rounded-lg"
+                class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2 rounded-md"
               >
                 <div class="flex items-center gap-4">
                   <div class="min-w-0">
@@ -508,9 +508,9 @@ function startEditServer(server: MCPServerWithStatus) {
 
             <div v-else class="space-y-4">
               <!-- 服务器列表 -->
-              <div v-for="server in mcpData?.servers" :key="server.id" class="border border-neutral-200 dark:border-neutral-700 rounded-lg">
+              <div v-for="server in mcpData?.servers" :key="server.id" class="border border-neutral-200 dark:border-neutral-700 rounded-md">
                 <div
-                  class="flex flex-col md:flex-row md:items-center gap-2 justify-between p-4 cursor-pointer hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                  class="flex flex-col md:flex-row md:items-center gap-2 justify-between p-4 cursor-pointer"
                   @click="toggleServerExpanded(server.id)"
                 >
                   <div class="flex items-center gap-2">
@@ -566,13 +566,13 @@ function startEditServer(server: MCPServerWithStatus) {
 
                 <!-- 展开的工具列表 -->
                 <div v-if="expandedServers.has(server.id) && server.connected"
-                     class="border-t border-neutral-200 dark:border-neutral-700 px-4 py-3 bg-neutral-50 dark:bg-neutral-800">
+                     class="border-t border-neutral-200 dark:border-neutral-700 px-4 py-3 bg-neutral-50 dark:bg-neutral-800 rounded-md">
                   <p class="text-sm font-medium mb-2">可用工具 ({{ server.tools.length }})</p>
                   <div v-if="server.tools.length > 0" class="space-y-2">
                     <div
                       v-for="tool in server.tools"
                       :key="tool.name"
-                      class="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded-lg border border-neutral-200 dark:border-neutral-700"
+                      class="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded-md border border-neutral-200 dark:border-neutral-700"
                     >
                       <div>
                         <p class="font-medium text-sm">{{ tool.name }}</p>
@@ -595,7 +595,7 @@ function startEditServer(server: MCPServerWithStatus) {
 
               <!-- 添加/编辑服务器表单 -->
               <div v-if="showAddServer || editingServer"
-                   class="border border-neutral-200 dark:border-neutral-700 rounded-lg p-4 space-y-4 bg-neutral-50 dark:bg-neutral-800">
+                   class="border border-neutral-200 dark:border-neutral-700 rounded-md p-4 space-y-4 bg-neutral-50 dark:bg-neutral-800">
                 <div class="flex items-center justify-between">
                   <h4 class="font-medium">{{ editingServer ? '编辑服务器' : '添加服务器' }}</h4>
                   <UButton
@@ -613,7 +613,7 @@ function startEditServer(server: MCPServerWithStatus) {
                 </UFormField>
 
                 <UFormField label="传输类型">
-                  <USelect v-model="serverForm.transportType" :options="transportOptions" class="w-full" size="lg" />
+                  <USelect v-model="serverForm.transportType" :items="transportOptions" class="w-full" size="lg" />
                 </UFormField>
 
                 <template v-if="serverForm.transportType === 'streamable-http' || serverForm.transportType === 'sse'">

@@ -170,7 +170,7 @@ async function handleImportContext(e: Event) {
     <div
       v-if="result"
       :class="result.success ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-300' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'"
-      class="mb-6 p-4 border rounded-lg flex items-start gap-3"
+      class="mb-6 p-4 border rounded-md flex items-start gap-3"
     >
       <UIcon
         :name="result.success ? 'i-heroicons-check-circle' : 'i-heroicons-x-circle'"

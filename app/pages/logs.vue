@@ -181,7 +181,7 @@ function formatData(data?: Record<string, unknown>) {
 
     <div
       ref="containerRef"
-      class="h-[calc(100vh-270px)] md:h-[calc(100vh-120px)] overflow-y-auto bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-lg p-4 font-mono text-xs"
+      class="h-[calc(100vh-270px)] md:h-[calc(100vh-120px)] overflow-y-auto bg-neutral-50 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-md p-4 font-mono text-xs"
       @scroll="checkIfAtBottom"
     >
       <div v-if="filteredLogs.length === 0" class="text-neutral-500 dark:text-neutral-400 text-center py-8">

@@ -399,7 +399,7 @@ const clearMenuItems = (groupId: number) => [
 
               <!-- 压缩记忆 -->
               <div v-if="contextDetail.memory"
-                   class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+                   class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-md">
                 <h4 class="font-medium text-blue-900 dark:text-blue-300 mb-1 text-sm">压缩记忆</h4>
                 <p class="text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap">{{ contextDetail.memory.summary }}</p>
                 <p class="text-xs text-blue-600 dark:text-blue-400 mt-2">
@@ -421,7 +421,7 @@ const clearMenuItems = (groupId: number) => [
                     'bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-800': msg.role === 'system',
                     'bg-neutral-50 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700': msg.role === 'user',
                   }"
-                  class="p-3 border rounded-lg text-sm transition-all"
+                  class="p-3 border rounded-md text-sm transition-all"
                 >
                   <div class="flex items-center gap-2 mb-2 flex-wrap">
                     <span
@@ -498,7 +498,7 @@ const clearMenuItems = (groupId: number) => [
                 <div
                   v-for="user in [...users].sort((a, b) => b.lastSeen - a.lastSeen)"
                   :key="user.userId"
-                  class="p-2 rounded-lg bg-neutral-50 dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 cursor-pointer transition-colors border border-neutral-200 dark:border-neutral-700"
+                  class="p-2 rounded-md bg-neutral-50 dark:bg-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-700 cursor-pointer transition-colors border border-neutral-200 dark:border-neutral-700"
                   @click="handleUserClick(groupId, user.userId)"
                 >
                   <div class="flex items-center justify-between">
@@ -637,7 +637,7 @@ const clearMenuItems = (groupId: number) => [
               <div
                 v-for="(trait, idx) in selectedUser.traits"
                 :key="idx"
-                class="text-xs text-neutral-600 dark:text-neutral-300 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 p-2 rounded-lg"
+                class="text-xs text-neutral-600 dark:text-neutral-300 bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 p-2 rounded-md"
               >
                 {{ trait }}
               </div>
@@ -651,7 +651,7 @@ const clearMenuItems = (groupId: number) => [
               <div
                 v-for="(pref, idx) in selectedUser.preferences"
                 :key="idx"
-                class="text-xs text-neutral-600 dark:text-neutral-300 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 p-2 rounded-lg"
+                class="text-xs text-neutral-600 dark:text-neutral-300 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 p-2 rounded-md"
               >
                 {{ pref }}
               </div>

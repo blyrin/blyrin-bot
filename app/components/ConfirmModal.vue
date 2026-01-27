@@ -23,7 +23,7 @@ function handleConfirm() {
       <div class="flex items-start gap-3">
         <div
           :class="variant === 'destructive' ? 'bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800' : 'bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-800'"
-          class="rounded-lg border w-9 h-9 flex justify-center items-center"
+          class="rounded-md border w-9 h-9 flex justify-center items-center"
         >
           <UIcon
             :class="variant === 'destructive' ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'"
