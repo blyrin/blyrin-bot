@@ -1,0 +1,26 @@
+.output
+.data
+.nuxt
+.nitro
+.cache
+dist
+
+node_modules
+
+*.log
+
+# Misc
+.DS_Store
+.fleet
+.idea
+
+.env
+.env.*
+!.env.example
+
+/data/
+
+AGENTS.md
+GEMINI.md
+CLAUDE.md
+.ace-tool/
