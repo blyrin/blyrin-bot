@@ -20,6 +20,21 @@ interface CallOpenAIOptions {
   tools?: Array<{ type: 'function'; function: { name: string; description: string; parameters: unknown } }>
   toolContext?: ToolContext
   timeout?: number
+  abortSignal?: AbortSignal
+}
+
+// 聊天选项
+export interface ChatOptions {
+  toolContext?: ToolContext
+  onIntermediateOutput?: (content: string) => Promise<void>
+  abortSignal?: AbortSignal
+}
+
+// 聊天结果
+export interface ChatResult {
+  content: string
+  toolMessages?: ChatMessage[]
+  aborted?: boolean
 }
 
 // 将内容转换为纯文本
@@ -45,9 +60,10 @@ function getMessageName(msg: ChatMessage, groupId?: number): string | undefined 
 
 // 为内容添加时间前缀
 function addTimestampToContent(
-  content: string | ChatMessageContent[],
+  content: string | ChatMessageContent[] | null,
   timestamp?: number,
-): string | ChatMessageContent[] {
+): string | ChatMessageContent[] | null {
+  if (!content) return content
   const timeStr = formatTimestamp(timestamp)
   if (!timeStr) return content
 
@@ -55,24 +71,94 @@ function addTimestampToContent(
 
   const result = [...content]
   const textIndex = result.findIndex(c => c.type === 'text')
-  if (textIndex !== -1 && result[textIndex].text) {
-    result[textIndex] = { ...result[textIndex], text: `[${timeStr}] ${result[textIndex].text}` }
+  if (textIndex !== -1 && result[textIndex]!.text) {
+    result[textIndex] = { ...result[textIndex]!, text: `[${timeStr}] ${result[textIndex]!.text}` }
   }
   return result
 }
 
-// 合并连续的 user 消息
+// 合并连续的同角色消息并确保消息序列符合 API 要求
+// API 要求：assistant 消息后必须是 user 或 tool 消息
 function mergeConsecutiveMessages(messages: OpenAIMessage[]): OpenAIMessage[] {
-  return messages.reduce<OpenAIMessage[]>((result, msg) => {
+  const merged = messages.reduce<OpenAIMessage[]>((result, msg) => {
     const last = result[result.length - 1]
+
+    // 合并连续的 user 消息
     if (last?.role === 'user' && msg.role === 'user') {
       last.content = `${contentToText(last.content)}\n${contentToText(msg.content)}`
       delete last.name
-    } else {
-      result.push({ ...msg })
+      return result
     }
+
+    // 合并连续的 assistant 消息（没有 tool_calls 的情况）
+    // 如果前一个 assistant 有 tool_calls，不能合并，因为后面应该跟 tool 消息
+    if (last?.role === 'assistant' && msg.role === 'assistant' && !last.tool_calls?.length) {
+      const lastContent = contentToText(last.content)
+      const msgContent = contentToText(msg.content)
+      if (lastContent || msgContent) {
+        last.content = [lastContent, msgContent].filter(Boolean).join('\n')
+      }
+      // 如果新消息有 tool_calls，保留它
+      if (msg.tool_calls?.length) {
+        last.tool_calls = msg.tool_calls
+      }
+      return result
+    }
+
+    result.push({ ...msg })
     return result
   }, [])
+
+  // 过滤掉无效的消息序列：
+  // 1. assistant 消息（有 tool_calls）后面必须跟对应的 tool 消息
+  // 2. 如果 tool 消息的 tool_call_id 找不到对应的 assistant tool_calls，移除它
+  const validMessages: OpenAIMessage[] = []
+  const pendingToolCallIds = new Set<string>()
+
+  for (const msg of merged) {
+    if (msg.role === 'assistant' && msg.tool_calls?.length) {
+      // 记录需要的 tool_call_id
+      for (const tc of msg.tool_calls) {
+        pendingToolCallIds.add(tc.id)
+      }
+      validMessages.push(msg)
+    } else if (msg.role === 'tool') {
+      // 只保留有对应 tool_calls 的 tool 消息
+      if (msg.tool_call_id && pendingToolCallIds.has(msg.tool_call_id)) {
+        pendingToolCallIds.delete(msg.tool_call_id)
+        validMessages.push(msg)
+      } else {
+        logger.warn('AI', '跳过孤立的 tool 消息', { tool_call_id: msg.tool_call_id })
+      }
+    } else {
+      // 如果还有未匹配的 tool_calls，说明消息序列不完整
+      // 移除最后一个 assistant 消息（有 tool_calls 但没有对应 tool 响应）
+      if (pendingToolCallIds.size > 0) {
+        const lastIdx = validMessages.length - 1
+        if (lastIdx >= 0 && validMessages[lastIdx]?.role === 'assistant' && validMessages[lastIdx]?.tool_calls?.length) {
+          logger.warn('AI', '移除不完整的工具调用 assistant 消息', {
+            missingToolCallIds: Array.from(pendingToolCallIds),
+          })
+          validMessages.pop()
+        }
+        pendingToolCallIds.clear()
+      }
+      validMessages.push(msg)
+    }
+  }
+
+  // 最后检查：如果结尾是有 tool_calls 的 assistant 但没有 tool 响应，移除它
+  if (pendingToolCallIds.size > 0) {
+    const lastIdx = validMessages.length - 1
+    if (lastIdx >= 0 && validMessages[lastIdx]?.role === 'assistant' && validMessages[lastIdx]?.tool_calls?.length) {
+      logger.warn('AI', '移除结尾不完整的工具调用 assistant 消息', {
+        missingToolCallIds: Array.from(pendingToolCallIds),
+      })
+      validMessages.pop()
+    }
+  }
+
+  return validMessages
 }
 
 // 格式化消息为文本（用于压缩和提取）
@@ -84,14 +170,31 @@ function formatMessagesAsText(messages: ChatMessage[], groupId?: number): string
 
 // 转换 ChatMessage 为 OpenAIMessage
 function toOpenAIMessage(msg: ChatMessage, groupId?: number): OpenAIMessage {
+  // tool 消息直接转换
+  if (msg.role === 'tool') {
+    return {
+      role: 'tool',
+      tool_call_id: msg.tool_call_id!,
+      content: typeof msg.content === 'string' ? msg.content : contentToText(msg.content),
+    }
+  }
+
   const name = getMessageName(msg, groupId)
   // assistant 消息不添加时间戳
   const content = msg.role === 'assistant' ? msg.content : addTimestampToContent(msg.content, msg.timestamp)
-  return {
+
+  const result: OpenAIMessage = {
     role: msg.role,
-    content,
+    content: content ?? '',
     ...(name && { name }),
   }
+
+  // 保留 tool_calls
+  if (msg.tool_calls?.length) {
+    result.tool_calls = msg.tool_calls
+  }
+
+  return result
 }
 
 async function callOpenAI(
@@ -123,6 +226,16 @@ async function callOpenAI(
   const startTime = Date.now()
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+  // 如果有外部 abortSignal，监听它
+  const externalAbortHandler = () => controller.abort()
+  if (options?.abortSignal) {
+    if (options.abortSignal.aborted) {
+      clearTimeout(timeoutId)
+      throw new Error('操作已被打断')
+    }
+    options.abortSignal.addEventListener('abort', externalAbortHandler)
+  }
 
   try {
     const response = await fetch(`${config.provider.baseUrl}/chat/completions`, {
@@ -163,83 +276,186 @@ async function callOpenAI(
     return { content, toolCalls }
   } catch (error) {
     clearTimeout(timeoutId)
+    // 清理外部 abortSignal 监听器
+    if (options?.abortSignal) {
+      options.abortSignal.removeEventListener('abort', externalAbortHandler)
+    }
     if (error instanceof Error && error.name === 'AbortError') {
+      // 检查是否是外部打断
+      if (options?.abortSignal?.aborted) {
+        logger.info('AI', 'API 请求被打断', { elapsed: Date.now() - startTime })
+        throw new Error('操作已被打断')
+      }
       logger.error('AI', 'API 请求超时', { timeout, elapsed: Date.now() - startTime })
       throw new Error(`OpenAI API 请求超时 (${timeout}ms)`)
     }
     throw error
+  } finally {
+    // 确保清理监听器
+    if (options?.abortSignal) {
+      options.abortSignal.removeEventListener('abort', externalAbortHandler)
+    }
   }
 }
 
-async function handleToolCalls(
+// 无限轮工具调用循环
+async function handleToolCallsLoop(
   messages: OpenAIMessage[],
-  toolCalls: OpenAIToolCall[],
+  initialToolCalls: OpenAIToolCall[],
   toolContext: ToolContext,
-  options?: CallOpenAIOptions,
-): Promise<string> {
-  logger.info('AI', '处理工具调用', {
-    toolCount: toolCalls.length,
-    tools: toolCalls.map(tc => tc.function.name),
-  })
+  options: {
+    tools?: CallOpenAIOptions['tools']
+    onIntermediateOutput?: (content: string) => Promise<void>
+    abortSignal?: AbortSignal
+  },
+): Promise<{
+  content: string
+  toolMessages: ChatMessage[]
+  aborted: boolean
+}> {
+  const toolMessages: ChatMessage[] = []
+  let currentToolCalls = initialToolCalls
+  let round = 0
 
-  messages.push({ role: 'assistant', content: null, tool_calls: toolCalls })
+  while (currentToolCalls.length > 0) {
+    round++
 
-  for (const toolCall of toolCalls) {
-    const toolName = toolCall.function.name
-    let args: Record<string, unknown> = {}
-    try {
-      args = JSON.parse(toolCall.function.arguments)
-    } catch (e) {
-      logger.error('AI', '解析工具参数失败', {
-        toolName, arguments: toolCall.function.arguments, error: String(e),
-      })
+    // 检查是否被打断
+    if (options.abortSignal?.aborted) {
+      logger.info('AI', '工具调用循环被打断', { round })
+      return { content: '', toolMessages, aborted: true }
     }
 
-    const result = await executeTool(toolName, args, toolContext)
-    messages.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(result) })
+    logger.info('AI', `处理工具调用 (第 ${round} 轮)`, {
+      toolCount: currentToolCalls.length,
+      tools: currentToolCalls.map(tc => tc.function.name),
+    })
+
+    // 记录 assistant 消息（含 tool_calls）
+    const assistantMsg: ChatMessage = {
+      role: 'assistant',
+      content: null,
+      tool_calls: currentToolCalls,
+      timestamp: Date.now(),
+    }
+    toolMessages.push(assistantMsg)
+    messages.push({ role: 'assistant', content: null, tool_calls: currentToolCalls })
+
+    // 执行所有工具调用
+    for (const toolCall of currentToolCalls) {
+      // 再次检查打断
+      if (options.abortSignal?.aborted) {
+        logger.info('AI', '工具执行被打断', { round, toolName: toolCall.function.name })
+        return { content: '', toolMessages, aborted: true }
+      }
+
+      const toolName = toolCall.function.name
+      let args: Record<string, unknown> = {}
+      try {
+        args = JSON.parse(toolCall.function.arguments)
+      } catch (e) {
+        logger.error('AI', '解析工具参数失败', {
+          toolName, arguments: toolCall.function.arguments, error: String(e),
+        })
+      }
+
+      const result = await executeTool(toolName, args, toolContext)
+      const resultStr = JSON.stringify(result)
+
+      // 记录 tool 消息
+      const toolMsg: ChatMessage = {
+        role: 'tool',
+        content: resultStr,
+        tool_call_id: toolCall.id,
+        timestamp: Date.now(),
+      }
+      toolMessages.push(toolMsg)
+      messages.push({ role: 'tool', tool_call_id: toolCall.id, content: resultStr })
+    }
+
+    // 再次检查打断
+    if (options.abortSignal?.aborted) {
+      return { content: '', toolMessages, aborted: true }
+    }
+
+    // 调用 AI 获取下一步响应
+    const response = await callOpenAI(messages, {
+      tools: options.tools,
+      abortSignal: options.abortSignal,
+    })
+
+    // 如果有文本输出，发送中间输出
+    if (response.content && options.onIntermediateOutput) {
+      const trimmed = response.content.trim()
+      if (trimmed && response.toolCalls?.length) {
+        // 只有在还有后续工具调用时才作为中间输出
+        await options.onIntermediateOutput(trimmed)
+        // 记录中间输出到 toolMessages
+        toolMessages.push({
+          role: 'assistant',
+          content: trimmed,
+          timestamp: Date.now(),
+        })
+        messages.push({ role: 'assistant', content: trimmed })
+      }
+    }
+
+    // 检查是否还有工具调用
+    if (response.toolCalls?.length) {
+      currentToolCalls = response.toolCalls
+    } else {
+      // 没有更多工具调用，返回最终内容
+      return { content: response.content, toolMessages, aborted: false }
+    }
   }
 
-  const finalResponse = await callOpenAI(messages, { ...options, tools: undefined })
-
-  if (finalResponse.toolCalls?.length) {
-    logger.warn('AI', '工具调用后仍有新的工具调用请求，忽略')
-  }
-
-  return finalResponse.content
+  return { content: '', toolMessages, aborted: false }
 }
 
 // 核心聊天逻辑
 async function chatCore(
   messages: OpenAIMessage[],
   toolContext?: ToolContext,
-): Promise<string> {
+  options?: ChatOptions,
+): Promise<ChatResult> {
   const tools = toOpenAITools()
   const hasTools = tools.length > 0 && toolContext
 
   const response = await callOpenAI(messages, {
     tools: hasTools ? tools : undefined,
     toolContext,
+    abortSignal: options?.abortSignal,
   })
 
-  if (response.toolCalls?.length && toolContext) {
-    return handleToolCalls(messages, response.toolCalls, toolContext)
+  // 检查打断
+  if (options?.abortSignal?.aborted) {
+    return { content: '', aborted: true }
   }
 
-  return response.content
+  if (response.toolCalls?.length && toolContext) {
+    const result = await handleToolCallsLoop(messages, response.toolCalls, toolContext, {
+      tools: hasTools ? tools : undefined,
+      onIntermediateOutput: options?.onIntermediateOutput,
+      abortSignal: options?.abortSignal,
+    })
+    return result
+  }
+
+  return { content: response.content }
 }
 
 export async function chat(
   messages: ChatMessage[],
   systemPrompt: string,
   groupId?: number,
-  toolContext?: ToolContext,
-): Promise<string> {
+  options?: ChatOptions,
+): Promise<ChatResult> {
   const openaiMessages = mergeConsecutiveMessages([
     { role: 'system', content: systemPrompt },
     ...messages.map(msg => toOpenAIMessage(msg, groupId)),
   ])
 
-  return chatCore(openaiMessages, toolContext)
+  return chatCore(openaiMessages, options?.toolContext, options)
 }
 
 export async function chatWithVision(
@@ -247,15 +463,15 @@ export async function chatWithVision(
   imageUrls: string[],
   systemPrompt: string,
   groupId?: number,
-  toolContext?: ToolContext,
-): Promise<string> {
+  options?: ChatOptions,
+): Promise<ChatResult> {
   const config = getAIConfig()
 
   if (!config.provider.supportsVision || imageUrls.length === 0) {
-    return chat(messages, systemPrompt, groupId, toolContext)
+    return chat(messages, systemPrompt, groupId, options)
   }
 
-  const lastMessage = messages[messages.length - 1]
+  const lastMessage = messages[messages.length - 1]!
   const timeStr = formatTimestamp(lastMessage.timestamp)
   const textContent = contentToText(lastMessage.content)
   const textWithTime = timeStr ? `[${timeStr}] ${textContent}` : textContent
@@ -274,7 +490,7 @@ export async function chatWithVision(
     { role: lastMessage.role, content: contentWithImages },
   ])
 
-  return chatCore(openaiMessages, toolContext)
+  return chatCore(openaiMessages, options?.toolContext, options)
 }
 
 export async function compressContext(messages: ChatMessage[], groupId?: number): Promise<string> {

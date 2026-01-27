@@ -43,6 +43,7 @@ export class StdioTransport {
         cwd: this.config.cwd,
         env,
         stdio: ['pipe', 'pipe', 'pipe'],
+        shell: true,
       })
 
       this.process.on('error', (error) => {

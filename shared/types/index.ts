@@ -81,12 +81,14 @@ export interface MessageMeta {
 
 // AI 聊天消息
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string | ChatMessageContent[];
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string | ChatMessageContent[] | null;
   messageId?: number;  // 消息ID，用于引用关联
   userId?: number;  // 用户ID，用于关联用户记忆获取名称
   timestamp?: number;
   meta?: MessageMeta;  // 消息元数据
+  tool_calls?: OpenAIToolCall[];  // assistant 消息的工具调用
+  tool_call_id?: string;          // tool 消息的调用 ID
 }
 
 export interface ChatMessageContent {

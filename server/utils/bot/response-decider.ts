@@ -112,7 +112,7 @@ export type UserNameMap = Map<number, string>;
 // 从上下文中查找引用的消息内容
 function findReplyContent(replyToMessageId: number, contextMessages: ChatMessage[]): string | undefined {
   const replyMsg = contextMessages.find(msg => msg.messageId === replyToMessageId)
-  if (!replyMsg) return undefined
+  if (!replyMsg || !replyMsg.content) return undefined
 
   // 提取消息内容（如果是字符串直接使用，否则提取文本部分）
   const content = typeof replyMsg.content === 'string'

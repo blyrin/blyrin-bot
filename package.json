@@ -8,7 +8,7 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "typecheck": "nuxt prepare && vue-tsc --noEmit"
+    "typecheck": "nuxt prepare && pnpm exec nuxi typecheck"
   },
   "dependencies": {
     "@naplink/naplink": "^0.0.3",

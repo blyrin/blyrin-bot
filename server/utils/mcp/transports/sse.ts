@@ -41,7 +41,7 @@ export class SSETransport {
       const url = new URL(this.config.url)
 
       // 使用 eventsource 包支持 Node.js 环境和自定义 headers
-      const eventSourceOptions: EventSource.EventSourceInitDict = {}
+      const eventSourceOptions: any = {}
       if (this.config.headers && Object.keys(this.config.headers).length > 0) {
         eventSourceOptions.headers = this.config.headers
       }
@@ -52,7 +52,7 @@ export class SSETransport {
         logger.info('MCP', `SSE 连接已打开: ${this.config.name}`)
       }
 
-      this.eventSource.onerror = (error: MessageEvent) => {
+      this.eventSource.onerror = (error) => {
         logger.error('MCP', `${this.config.name} SSE 错误`, { error: String(error) })
         if (!this.connected) {
           reject(new Error('SSE 连接失败'))

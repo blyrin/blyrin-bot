@@ -2,6 +2,15 @@ import { NapLink } from '@naplink/naplink'
 import type { SenderInfo } from './response-decider'
 import { buildFullMessageContent, extractImageFiles, extractMessageMeta, shouldReply } from './response-decider'
 import { isGroupInCooldown, scheduleReply } from './message-aggregator'
+import {
+  abortCurrentProcessing,
+  clearAllQueues,
+  enqueueMessage,
+  finishProcessing,
+  getCurrentProcessingUserId,
+  isGroupProcessing,
+  startProcessing,
+} from './group-queue'
 
 interface MessageSegment {
   type: string;
@@ -183,6 +192,23 @@ async function handleGroupMessage(event: GroupMessageEvent): Promise<void> {
 
   logger.info('Bot', `决定回复消息`, { groupId, userId, reason: decision.reason })
 
+  // 检查群是否正在处理中
+  if (isGroupProcessing(groupId)) {
+    const currentUserId = getCurrentProcessingUserId(groupId)
+
+    if (currentUserId === userId) {
+      // 同一用户触发，打断当前处理
+      logger.info('Bot', '同用户触发新对话，打断当前处理', { groupId, userId })
+      abortCurrentProcessing(groupId)
+      // 消息已添加到上下文，等待当前处理结束后会从上下文获取最新消息
+    } else {
+      // 不同用户，入队等待
+      enqueueMessage(groupId, event)
+      logger.info('Bot', '群正在处理中，消息已入队', { groupId, userId })
+    }
+    return
+  }
+
   // 获取冷却时间配置
   const cooldownMs = groupSettings.aggregationCooldown ?? 3000
 
@@ -200,6 +226,9 @@ async function processReply(triggerEvent: GroupMessageEvent, _aggregatedEvents: 
   const groupId = triggerEvent.group_id
   const userId = triggerEvent.user_id
   const nickname = triggerEvent.sender.card || triggerEvent.sender.nickname
+
+  // 获取 AbortSignal 并标记开始处理
+  const abortSignal = startProcessing(groupId, userId)
 
   try {
     // 获取上下文消息（包含冷却期间收集的所有消息）
@@ -250,9 +279,29 @@ async function processReply(triggerEvent: GroupMessageEvent, _aggregatedEvents: 
       messageId: triggerEvent.message_id,
     }
 
+    // 中间输出回调 - 工具调用期间发送 AI 的文本输出
+    const onIntermediateOutput = async (content: string) => {
+      if (abortSignal.aborted) return
+      if (!content.trim() || !client) return
+
+      await delay(getRandomDelay())
+      await client.sendGroupMessage(String(groupId), [
+        { type: 'text', data: { text: content.trim() } },
+      ])
+      // 中间输出已在 AI 模块中记录到 toolMessages，这里不重复添加
+      logger.debug('Bot', '发送中间输出', { groupId, content: content.slice(0, 100) })
+    }
+
+    // 构建聊天选项
+    const chatOptions: import('../ai').ChatOptions = {
+      toolContext,
+      onIntermediateOutput,
+      abortSignal,
+    }
+
     // 如果支持视觉功能，提取图片
     const aiConfig = getAIConfig()
-    let reply: string
+    let result: import('../ai').ChatResult
 
     if (aiConfig.provider.supportsVision) {
       const imageFiles = extractImageFiles(triggerEvent.message)
@@ -271,19 +320,33 @@ async function processReply(triggerEvent: GroupMessageEvent, _aggregatedEvents: 
         }
 
         if (imageUrls.length > 0) {
-          reply = await chatWithVision(contextMessages, imageUrls, systemPrompt, groupId, toolContext)
+          result = await chatWithVision(contextMessages, imageUrls, systemPrompt, groupId, chatOptions)
         } else {
-          reply = await chat(contextMessages, systemPrompt, groupId, toolContext)
+          result = await chat(contextMessages, systemPrompt, groupId, chatOptions)
         }
       } else {
-        reply = await chat(contextMessages, systemPrompt, groupId, toolContext)
+        result = await chat(contextMessages, systemPrompt, groupId, chatOptions)
       }
     } else {
-      reply = await chat(contextMessages, systemPrompt, groupId, toolContext)
+      result = await chat(contextMessages, systemPrompt, groupId, chatOptions)
+    }
+
+    // 检查是否被打断
+    if (result.aborted || abortSignal.aborted) {
+      logger.info('Bot', '处理被打断，跳过发送最终回复', { groupId, userId })
+      return
+    }
+
+    // 保存工具调用历史到上下文
+    if (result.toolMessages?.length) {
+      for (const msg of result.toolMessages) {
+        addMessage(groupId, msg)
+      }
+      logger.debug('Bot', '已保存工具调用历史', { groupId, count: result.toolMessages.length })
     }
 
     // 对响应内容进行 trim 处理
-    reply = reply.trim()
+    const reply = result.content.trim()
 
     // 检查响应是否为空
     if (!reply) {
@@ -327,7 +390,23 @@ async function processReply(triggerEvent: GroupMessageEvent, _aggregatedEvents: 
       }
     }
   } catch (error) {
+    // 如果是打断错误，不记录为错误
+    if (error instanceof Error && error.message === '操作已被打断') {
+      logger.info('Bot', '处理被打断', { groupId, userId })
+      return
+    }
     logger.error('Bot', '处理消息时出错', { error: String(error), groupId, userId })
+  } finally {
+    // 释放锁并处理队列中的下一条消息
+    const nextMessage = finishProcessing(groupId)
+    if (nextMessage) {
+      // 使用 setImmediate 避免栈溢出
+      setImmediate(() => {
+        processReply(nextMessage.event, []).catch(err => {
+          logger.error('Bot', '处理队列消息时出错', { error: String(err) })
+        })
+      })
+    }
   }
 }
 
@@ -438,6 +517,9 @@ export async function disconnectBot(): Promise<void> {
 
   // 清除自动重连定时器，防止自动重连
   clearReconnectTimer()
+
+  // 清空所有群队列
+  clearAllQueues()
 
   if (client) {
     try {

@@ -408,8 +408,9 @@ const clearMenuItems = (groupId: number) => [
               </div>
 
               <!-- 消息列表 -->
-              <div :ref="(el) => messagesContainerRefs[groupId] = el as HTMLDivElement" class="space-y-2 max-h-96 overflow-y-auto">
-                <div v-if="contextDetail.context.messages.length === 0" class="text-sm text-neutral-400 dark:text-neutral-500 text-center py-8">
+              <div :ref="(el) => messagesContainerRefs[groupId] = el as HTMLDivElement" class="space-y-2 max-h-120 overflow-y-auto">
+                <div v-if="contextDetail.context.messages.length === 0"
+                     class="text-sm text-neutral-400 dark:text-neutral-500 text-center py-8">
                   暂无对话记录
                 </div>
                 <div
@@ -420,6 +421,7 @@ const clearMenuItems = (groupId: number) => [
                     'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800': msg.role === 'assistant',
                     'bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-800': msg.role === 'system',
                     'bg-neutral-50 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700': msg.role === 'user',
+                    'bg-amber-50 dark:bg-amber-900/30 border-amber-200 dark:border-amber-800': msg.role === 'tool',
                   }"
                   class="p-3 border rounded-md text-sm transition-all"
                 >
@@ -429,10 +431,11 @@ const clearMenuItems = (groupId: number) => [
                         'text-green-700 dark:text-green-400': msg.role === 'assistant',
                         'text-purple-700 dark:text-purple-400': msg.role === 'system',
                         'text-neutral-700 dark:text-neutral-300': msg.role === 'user',
+                        'text-amber-700 dark:text-amber-400': msg.role === 'tool',
                       }"
                       class="font-medium"
                     >
-                      {{ msg.role === 'assistant' ? '机器人' : msg.role === 'system' ? '系统' : '用户' }}
+                      {{ msg.role === 'assistant' ? '机器人' : msg.role === 'system' ? '系统' : msg.role === 'tool' ? '工具' : '用户' }}
                     </span>
                     <UBadge v-if="msg.messageId" color="primary" size="xs">
                       <UIcon class="w-3 h-3" name="i-heroicons-hashtag" />
@@ -442,9 +445,28 @@ const clearMenuItems = (groupId: number) => [
                       <UIcon class="w-3 h-3" name="i-heroicons-user" />
                       {{ msg.userId }}
                     </UBadge>
+                    <UBadge v-if="msg.tool_call_id" color="warning" size="xs">
+                      <UIcon class="w-3 h-3" name="i-heroicons-wrench-screwdriver" />
+                      {{ msg.tool_call_id }}
+                    </UBadge>
                     <span v-if="msg.timestamp" class="text-xs text-neutral-400 dark:text-neutral-500">
                       {{ formatTime(msg.timestamp) }}
                     </span>
+                  </div>
+
+                  <!-- 工具调用信息 (assistant 消息的 tool_calls) -->
+                  <div v-if="msg.tool_calls?.length" class="mb-2 space-y-1">
+                    <div
+                      v-for="tc in msg.tool_calls"
+                      :key="tc.id"
+                      class="flex items-center gap-2 text-xs bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 px-2 py-1 rounded"
+                    >
+                      <UIcon class="w-3 h-3" name="i-heroicons-wrench-screwdriver" />
+                      <span class="font-mono">{{ tc.function.name }}</span>
+                      <span class="text-amber-600 dark:text-amber-400 truncate max-w-48" :title="tc.function.arguments">
+                        {{ tc.function.arguments.length > 50 ? tc.function.arguments.slice(0, 50) + '...' : tc.function.arguments }}
+                      </span>
+                    </div>
                   </div>
 
                   <!-- 消息元数据 -->
@@ -465,15 +487,21 @@ const clearMenuItems = (groupId: number) => [
                     </UBadge>
                   </div>
 
+                  <!-- 消息内容 -->
                   <p
+                    v-if="msg.content !== null"
                     :class="{
                       'text-green-900 dark:text-green-200': msg.role === 'assistant',
                       'text-purple-900 dark:text-purple-200': msg.role === 'system',
                       'text-neutral-900 dark:text-neutral-100': msg.role === 'user',
+                      'text-amber-900 dark:text-amber-200 font-mono text-xs': msg.role === 'tool',
                     }"
                     class="whitespace-pre-wrap break-all"
                   >
                     {{ typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content) }}
+                  </p>
+                  <p v-else-if="!msg.tool_calls?.length" class="text-neutral-400 dark:text-neutral-500 italic">
+                    (空内容)
                   </p>
                 </div>
               </div>
@@ -494,7 +522,7 @@ const clearMenuItems = (groupId: number) => [
                 暂无群友数据
               </div>
 
-              <div v-else class="space-y-2 max-h-96 overflow-y-auto">
+              <div v-else class="space-y-2 max-h-120 overflow-y-auto">
                 <div
                   v-for="user in [...users].sort((a, b) => b.lastSeen - a.lastSeen)"
                   :key="user.userId"
