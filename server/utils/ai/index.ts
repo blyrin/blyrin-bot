@@ -77,45 +77,16 @@ function addTimestampToContent(
   return result
 }
 
-// 合并连续的同角色消息并确保消息序列符合 API 要求
+// 确保消息序列符合 API 要求
 // API 要求：assistant 消息后必须是 user 或 tool 消息
-function mergeConsecutiveMessages(messages: OpenAIMessage[]): OpenAIMessage[] {
-  const merged = messages.reduce<OpenAIMessage[]>((result, msg) => {
-    const last = result[result.length - 1]
-
-    // 合并连续的 user 消息
-    if (last?.role === 'user' && msg.role === 'user') {
-      last.content = `${contentToText(last.content)}\n${contentToText(msg.content)}`
-      delete last.name
-      return result
-    }
-
-    // 合并连续的 assistant 消息（没有 tool_calls 的情况）
-    // 如果前一个 assistant 有 tool_calls，不能合并，因为后面应该跟 tool 消息
-    if (last?.role === 'assistant' && msg.role === 'assistant' && !last.tool_calls?.length) {
-      const lastContent = contentToText(last.content)
-      const msgContent = contentToText(msg.content)
-      if (lastContent || msgContent) {
-        last.content = [lastContent, msgContent].filter(Boolean).join('\n')
-      }
-      // 如果新消息有 tool_calls，保留它
-      if (msg.tool_calls?.length) {
-        last.tool_calls = msg.tool_calls
-      }
-      return result
-    }
-
-    result.push({ ...msg })
-    return result
-  }, [])
-
+function makeValidMessages(messages: OpenAIMessage[]): OpenAIMessage[] {
   // 过滤掉无效的消息序列：
   // 1. assistant 消息（有 tool_calls）后面必须跟对应的 tool 消息
   // 2. 如果 tool 消息的 tool_call_id 找不到对应的 assistant tool_calls，移除它
   const validMessages: OpenAIMessage[] = []
   const pendingToolCallIds = new Set<string>()
 
-  for (const msg of merged) {
+  for (const msg of messages) {
     if (msg.role === 'assistant' && msg.tool_calls?.length) {
       // 记录需要的 tool_call_id
       for (const tc of msg.tool_calls) {
@@ -433,12 +404,11 @@ async function chatCore(
   }
 
   if (response.toolCalls?.length && toolContext) {
-    const result = await handleToolCallsLoop(messages, response.toolCalls, toolContext, {
+    return await handleToolCallsLoop(messages, response.toolCalls, toolContext, {
       tools: hasTools ? tools : undefined,
       onIntermediateOutput: options?.onIntermediateOutput,
       abortSignal: options?.abortSignal,
     })
-    return result
   }
 
   return { content: response.content }
@@ -450,7 +420,7 @@ export async function chat(
   groupId?: number,
   options?: ChatOptions,
 ): Promise<ChatResult> {
-  const openaiMessages = mergeConsecutiveMessages([
+  const openaiMessages = makeValidMessages([
     { role: 'system', content: systemPrompt },
     ...messages.map(msg => toOpenAIMessage(msg, groupId)),
   ])
@@ -484,7 +454,7 @@ export async function chatWithVision(
     })),
   ]
 
-  const openaiMessages = mergeConsecutiveMessages([
+  const openaiMessages = makeValidMessages([
     { role: 'system', content: systemPrompt },
     ...messages.slice(0, -1).map(msg => toOpenAIMessage(msg, groupId)),
     { role: lastMessage.role, content: contentWithImages },
