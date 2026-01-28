@@ -21,7 +21,7 @@ function getDefaultConfig(): UnifiedConfig {
     ai: {
       provider: { baseUrl: '', apiKey: '', model: 'gpt-4o-mini', supportsVision: true },
       generation: { maxTokens: 2000, temperature: 0.8 },
-      context: { maxMessages: 50, compressionThreshold: 40, maxImagesPerRequest: 3 },
+      context: { maxMessages: 50, compressionThreshold: 40 },
       compression: { model: 'gpt-4o-mini', maxTokens: 1000 },
     },
     groups: {

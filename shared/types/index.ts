@@ -28,7 +28,6 @@ export interface AIConfig {
   context: {
     maxMessages: number;
     compressionThreshold: number;
-    maxImagesPerRequest: number;
   };
   compression: {
     model: string;

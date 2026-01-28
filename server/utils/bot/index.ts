@@ -94,6 +94,33 @@ function getRandomDelay(): number {
   return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
+async function storeIncomingImages(
+  groupId: number,
+  messageId: number,
+  userId: number,
+  message: MessageSegment[],
+): Promise<void> {
+  if (!client) return
+  const imageFiles = extractImageFiles(message)
+  if (imageFiles.length === 0) return
+
+  const imageSources: Array<{ url: string; imageIndex: number }> = []
+  for (const [index, file] of imageFiles.entries()) {
+    try {
+      const imageInfo = await client.getImage(file)
+      if (imageInfo.url) {
+        imageSources.push({ url: imageInfo.url, imageIndex: index })
+      }
+    } catch (err) {
+      logger.error('Bot', '获取图片URL失败', { error: String(err) })
+    }
+  }
+
+  if (imageSources.length > 0) {
+    await storeMessageImagesFromUrls(groupId, messageId, userId, imageSources)
+  }
+}
+
 async function handleGroupMessage(event: GroupMessageEvent): Promise<void> {
   const groupId = event.group_id
   const userId = event.user_id
@@ -169,6 +196,13 @@ async function handleGroupMessage(event: GroupMessageEvent): Promise<void> {
     meta: messageMeta,
   }
   addMessage(groupId, userMessage)
+
+  // 保存消息中的图片
+  try {
+    await storeIncomingImages(groupId, event.message_id, userId, event.message)
+  } catch (error) {
+    logger.error('Bot', '保存图片失败', { error: String(error), groupId, messageId: event.message_id })
+  }
 
   // 每条消息后检查并压缩上下文
   await checkAndCompress(groupId)
@@ -304,26 +338,9 @@ async function processReply(triggerEvent: GroupMessageEvent, _aggregatedEvents: 
     let result: import('../ai').ChatResult
 
     if (aiConfig.provider.supportsVision) {
-      const imageFiles = extractImageFiles(triggerEvent.message)
-      if (imageFiles.length > 0 && client) {
-        // 获取图片 URL
-        const imageUrls: string[] = []
-        for (const file of imageFiles.slice(0, aiConfig.context.maxImagesPerRequest)) {
-          try {
-            const imageInfo = await client.getImage(file)
-            if (imageInfo.url) {
-              imageUrls.push(imageInfo.url)
-            }
-          } catch (err) {
-            logger.error('Bot', '获取图片URL失败', { error: String(err) })
-          }
-        }
-
-        if (imageUrls.length > 0) {
-          result = await chatWithVision(contextMessages, imageUrls, systemPrompt, groupId, chatOptions)
-        } else {
-          result = await chat(contextMessages, systemPrompt, groupId, chatOptions)
-        }
+      const imageUrls = getMessageImageDataUrls(groupId, triggerEvent.message_id)
+      if (imageUrls.length > 0) {
+        result = await chatWithVision(contextMessages, imageUrls, systemPrompt, groupId, chatOptions)
       } else {
         result = await chat(contextMessages, systemPrompt, groupId, chatOptions)
       }

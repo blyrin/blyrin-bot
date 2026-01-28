@@ -76,6 +76,20 @@ export async function checkAndCompress(groupId: number): Promise<boolean> {
     context.lastUpdated = Date.now()
     saveContext(context)
 
+    const removedMessageIds = toCompress
+      .map(msg => msg.messageId)
+      .filter((id): id is number => typeof id === 'number')
+    if (removedMessageIds.length > 0) {
+      try {
+        deleteMessageImages(groupId, removedMessageIds)
+      } catch (error) {
+        logger.warn('Context', 'Failed to delete message images', {
+          groupId,
+          error: String(error),
+        })
+      }
+    }
+
     logger.info('Context', '上下文压缩成功', {
       groupId,
       compressedCount: toCompress.length,
@@ -104,6 +118,11 @@ export async function checkAndCompress(groupId: number): Promise<boolean> {
 
 export function clearContext(groupId: number): void {
   deleteContextFromDb(groupId)
+  try {
+    deleteGroupImages(groupId)
+  } catch (error) {
+    logger.warn('Context', 'Failed to delete group images', { groupId, error: String(error) })
+  }
 }
 
 export function clearMemory(groupId: number): void {

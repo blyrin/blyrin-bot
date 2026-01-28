@@ -39,6 +39,7 @@ const selectedUser = ref<UserMemory | null>(null)
 const userSlideoverOpen = ref(false)
 const activeTab = ref<'messages' | 'users'>('messages')
 const messagesContainerRefs = ref<Record<number, HTMLDivElement | null>>({})
+const messageImages = ref<Record<number, string[]>>({})
 
 function scrollMessagesToBottom() {
   nextTick(() => {
@@ -156,8 +157,11 @@ async function handleExpand(groupId: number) {
     expandedGroup.value = null
     contextDetail.value = null
     users.value = []
+    messageImages.value = {}
     return
   }
+
+  messageImages.value = {}
 
   try {
     const [contextRes, usersRes] = await Promise.all([
@@ -170,6 +174,9 @@ async function handleExpand(groupId: number) {
     }
     if (usersRes.success) {
       users.value = usersRes.data
+    }
+    if (contextRes.success) {
+      await fetchMessageImages(groupId, contextRes.data.context.messages)
     }
     expandedGroup.value = groupId
     activeTab.value = 'messages'
@@ -187,6 +194,7 @@ async function handleClear(groupId: number, type: 'context' | 'memory' | 'all') 
       const res = await $fetch(`/api/contexts/${groupId}`)
       if (res.success) {
         contextDetail.value = res.data
+        await fetchMessageImages(groupId, res.data.context.messages)
       }
     }
     toast.add({ title: '清除成功', color: 'success' })
@@ -284,6 +292,27 @@ function scrollToMessage(messageId: number) {
     setTimeout(() => {
       targetEl.classList.remove('ring-2', 'ring-yellow-400')
     }, 2000)
+  }
+}
+
+async function fetchMessageImages(groupId: number, messages: ChatMessage[]) {
+  const messageIds = messages
+    .map(msg => msg.messageId)
+    .filter((id): id is number => typeof id === 'number')
+  if (messageIds.length === 0) {
+    messageImages.value = {}
+    return
+  }
+  try {
+    const res = await $fetch('/api/images/batch', {
+      method: 'POST',
+      body: { groupId, messageIds },
+    })
+    if (res.success) {
+      messageImages.value = res.data
+    }
+  } catch (err) {
+    console.error('获取图片失败:', err)
   }
 }
 
@@ -503,6 +532,20 @@ const clearMenuItems = (groupId: number) => [
                   <p v-else-if="!msg.tool_calls?.length" class="text-neutral-400 dark:text-neutral-500 italic">
                     (空内容)
                   </p>
+
+                  <div
+                    v-if="msg.messageId && messageImages[msg.messageId]?.length"
+                    class="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2"
+                  >
+                    <img
+                      v-for="(image, imageIdx) in messageImages[msg.messageId]"
+                      :key="`${msg.messageId}-${imageIdx}`"
+                      :src="image"
+                      :alt="`message-${msg.messageId}-image-${imageIdx}`"
+                      class="w-full max-h-48 object-contain rounded border border-neutral-200 dark:border-neutral-700 bg-white/60 dark:bg-neutral-900/40"
+                      loading="lazy"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

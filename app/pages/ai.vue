@@ -142,15 +142,6 @@ async function handleSave() {
               type="number"
             />
           </UFormField>
-
-          <UFormField label="每次请求最大图片数">
-            <UInput
-              v-model.number="config.context.maxImagesPerRequest"
-              class="w-full"
-              size="lg"
-              type="number"
-            />
-          </UFormField>
         </UForm>
       </UCard>
 

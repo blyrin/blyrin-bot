@@ -475,7 +475,7 @@ export async function chatWithVision(
 
   const contentWithImages: ChatMessageContent[] = [
     { type: 'text', text: textWithMeta },
-    ...imageUrls.slice(0, config.context.maxImagesPerRequest).map(url => ({
+    ...imageUrls.map(url => ({
       type: 'image_url' as const,
       image_url: { url },
     })),

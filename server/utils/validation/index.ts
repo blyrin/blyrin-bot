@@ -37,7 +37,6 @@ export const AIGenerationSchema = z.object({
 export const AIContextSchema = z.object({
   maxMessages: z.number().int().min(1).max(1000),
   compressionThreshold: z.number().int().min(1).max(1000),
-  maxImagesPerRequest: z.number().int().min(0).max(20),
 })
 
 export const AICompressionSchema = z.object({
