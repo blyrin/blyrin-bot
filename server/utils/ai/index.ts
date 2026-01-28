@@ -77,6 +77,26 @@ function addTimestampToContent(
   return result
 }
 
+// 为内容添加消息ID前缀
+function addMessageIdToContent(
+  content: string | ChatMessageContent[] | null,
+  messageId?: number,
+): string | ChatMessageContent[] | null {
+  if (!content || !messageId) return content
+  const prefix = `[messageId:${messageId}] `
+
+  if (typeof content === 'string') return `${prefix}${content}`
+
+  const result = [...content]
+  const textIndex = result.findIndex(c => c.type === 'text')
+  if (textIndex !== -1 && result[textIndex]!.text) {
+    result[textIndex] = { ...result[textIndex]!, text: `${prefix}${result[textIndex]!.text}` }
+  } else {
+    result.unshift({ type: 'text', text: prefix.trimEnd() })
+  }
+  return result
+}
+
 // 确保消息序列符合 API 要求
 // API 要求：assistant 消息后必须是 user 或 tool 消息
 function makeValidMessages(messages: OpenAIMessage[]): OpenAIMessage[] {
@@ -135,7 +155,10 @@ function makeValidMessages(messages: OpenAIMessage[]): OpenAIMessage[] {
 // 格式化消息为文本（用于压缩和提取）
 function formatMessagesAsText(messages: ChatMessage[], groupId?: number): string {
   return messages
-    .map(msg => `${getMessageName(msg, groupId) ?? msg.role}: ${contentToText(msg.content)}`)
+    .map((msg) => {
+      const messageIdPrefix = msg.messageId ? `[messageId:${msg.messageId}] ` : ''
+      return `${getMessageName(msg, groupId) ?? msg.role}: ${messageIdPrefix}${contentToText(msg.content)}`
+    })
     .join('\n')
 }
 
@@ -152,7 +175,10 @@ function toOpenAIMessage(msg: ChatMessage, groupId?: number): OpenAIMessage {
 
   const name = getMessageName(msg, groupId)
   // assistant 消息不添加时间戳
-  const content = msg.role === 'assistant' ? msg.content : addTimestampToContent(msg.content, msg.timestamp)
+  const timestampedContent = msg.role === 'assistant'
+    ? msg.content
+    : addTimestampToContent(msg.content, msg.timestamp)
+  const content = addMessageIdToContent(timestampedContent, msg.messageId)
 
   const result: OpenAIMessage = {
     role: msg.role,
@@ -445,9 +471,10 @@ export async function chatWithVision(
   const timeStr = formatTimestamp(lastMessage.timestamp)
   const textContent = contentToText(lastMessage.content)
   const textWithTime = timeStr ? `[${timeStr}] ${textContent}` : textContent
+  const textWithMeta = lastMessage.messageId ? `[messageId:${lastMessage.messageId}] ${textWithTime}` : textWithTime
 
   const contentWithImages: ChatMessageContent[] = [
-    { type: 'text', text: textWithTime },
+    { type: 'text', text: textWithMeta },
     ...imageUrls.slice(0, config.context.maxImagesPerRequest).map(url => ({
       type: 'image_url' as const,
       image_url: { url },
