@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import {
   deleteGroupImagesFromDb,
@@ -17,8 +20,46 @@ interface ImageSource {
   imageIndex: number
 }
 
-async function fetchImageBuffer(url: string): Promise<Buffer> {
-  const response = await fetch(url)
+const DATA_URL_PATTERN = /^data:([^;]+);base64,(.+)$/i
+const BASE64_URL_PREFIX = 'base64://'
+
+function decodeDataUrl(value: string): Buffer {
+  const match = value.match(DATA_URL_PATTERN)
+  if (!match || !match[2]) {
+    throw new Error('Invalid data URL')
+  }
+  return Buffer.from(match[2], 'base64')
+}
+
+function decodeBase64Url(value: string): Buffer {
+  const base64 = value.slice(BASE64_URL_PREFIX.length)
+  if (!base64) {
+    throw new Error('Invalid base64 URL')
+  }
+  return Buffer.from(base64, 'base64')
+}
+
+function resolveFilePath(value: string): string {
+  if (value.startsWith('file://')) {
+    return fileURLToPath(value)
+  }
+  return value
+}
+
+async function fetchImageBuffer(source: string): Promise<Buffer> {
+  if (source.startsWith('data:')) {
+    return decodeDataUrl(source)
+  }
+  if (source.startsWith(BASE64_URL_PREFIX)) {
+    return decodeBase64Url(source)
+  }
+  if (source.startsWith('file://') || path.isAbsolute(source)) {
+    return fs.readFile(resolveFilePath(source))
+  }
+  if (!/^https?:\/\//i.test(source)) {
+    throw new Error(`Unsupported image source: ${source}`)
+  }
+  const response = await fetch(source)
   if (!response.ok) {
     throw new Error(`Image download failed: ${response.status}`)
   }

@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { NapLink } from '@naplink/naplink'
 import type { SenderInfo } from './response-decider'
 import { buildFullMessageContent, extractImageFiles, extractMessageMeta, shouldReply } from './response-decider'
@@ -59,6 +60,12 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+const DIRECT_IMAGE_SOURCE_PATTERN = /^(https?:\/\/|file:\/\/|data:|base64:\/\/)/i
+
+function isDirectImageSource(value: string): boolean {
+  return DIRECT_IMAGE_SOURCE_PATTERN.test(value) || path.isAbsolute(value)
+}
+
 function getReconnectDelay(): number {
   const index = Math.min(reconnectAttempt, RECONNECT_INTERVALS.length - 1)
   return RECONNECT_INTERVALS[index]!
@@ -101,18 +108,36 @@ async function storeIncomingImages(
   message: MessageSegment[],
 ): Promise<void> {
   if (!client) return
+  const hasImages = message.some(seg => seg.type === 'image')
+  if (!hasImages) return
+
+  try {
+    await client.hydrateMessage(message)
+  } catch (err) {
+    logger.warn('Bot', '补全图片直链失败', { error: String(err) })
+  }
+
   const imageFiles = extractImageFiles(message)
   if (imageFiles.length === 0) return
 
   const imageSources: Array<{ url: string; imageIndex: number }> = []
   for (const [index, file] of imageFiles.entries()) {
+    const source = String(file || '').trim()
+    if (!source) continue
+
+    if (isDirectImageSource(source)) {
+      imageSources.push({ url: source, imageIndex: index })
+      continue
+    }
+
     try {
-      const imageInfo = await client.getImage(file)
-      if (imageInfo.url) {
-        imageSources.push({ url: imageInfo.url, imageIndex: index })
+      const imageInfo = await client.getImage(source)
+      const resolved = String(imageInfo?.url || imageInfo?.file || '')
+      if (resolved) {
+        imageSources.push({ url: resolved, imageIndex: index })
       }
     } catch (err) {
-      logger.error('Bot', '获取图片URL失败', { error: String(err) })
+      logger.error('Bot', '获取图片URL失败', { error: String(err), file: source })
     }
   }
 

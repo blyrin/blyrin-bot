@@ -60,7 +60,13 @@ export function extractTextContent(message: MessageSegment[]): string {
 export function extractImageFiles(message: MessageSegment[]): string[] {
   return message
     .filter(seg => seg.type === 'image')
-    .map(seg => String(seg.data.file || ''))
+    .map(seg => {
+      const data = seg.data as { url?: unknown; file?: unknown; file_id?: unknown }
+      if (typeof data.url === 'string' && data.url) return data.url
+      if (typeof data.file === 'string' && data.file) return data.file
+      if (typeof data.file_id === 'string' && data.file_id) return data.file_id
+      return ''
+    })
     .filter(Boolean)
 }
 
