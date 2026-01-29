@@ -16,13 +16,15 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 断开连接
-  await mcpManager.disconnectServer(name)
+  // 禁用该服务器并重新初始化
+  updateMCPServer(name, { ...server, enabled: false } as MCPServerConfig)
+  await reconnectMCPClient()
 
   // 返回完整的 MCP 配置数据
-  const statuses = mcpManager.getAllServerStatuses()
+  const updatedConfig = getMCPConfig()
+  const statuses = getMCPServerStatuses()
 
-  const servers = config.servers.map((s: MCPServerConfig) => {
+  const servers = updatedConfig.servers.map((s: MCPServerConfig) => {
     const status = statuses.find(st => st.name === s.name)
     return {
       ...s,
@@ -35,9 +37,9 @@ export default defineEventHandler(async (event) => {
   return {
     success: true,
     data: {
-      enabled: config.enabled,
+      enabled: updatedConfig.enabled,
       servers,
-      toolStates: config.toolStates,
+      toolStates: updatedConfig.toolStates,
     },
   }
 })

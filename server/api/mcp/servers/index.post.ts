@@ -35,21 +35,13 @@ export default defineEventHandler(async (event) => {
   } as MCPServerConfig
 
   addMCPServer(serverConfig)
-  mcpManager.addServer(serverConfig)
 
-  // 如果服务器已启用且全局 MCP 已启用，自动连接
-  config = getMCPConfig()
-  if (serverConfig.enabled && config.enabled) {
-    try {
-      await mcpManager.connectServer(serverConfig.name)
-    } catch (err) {
-      logger.error('MCP', `连接 ${serverConfig.name} 失败`, { error: String(err) })
-    }
-  }
+  // 重新初始化 MCP 客户端
+  await reconnectMCPClient()
 
   // 返回完整的 MCP 配置数据
   config = getMCPConfig()
-  const statuses = mcpManager.getAllServerStatuses()
+  const statuses = getMCPServerStatuses()
 
   const servers = config.servers.map((server: MCPServerConfig) => {
     const status = statuses.find(s => s.name === server.name)

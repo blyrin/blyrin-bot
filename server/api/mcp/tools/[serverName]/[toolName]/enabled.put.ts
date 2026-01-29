@@ -27,9 +27,9 @@ export default defineEventHandler(async (event) => {
   setMCPToolEnabled(serverName, toolName, result.data.enabled)
 
   const config = getMCPConfig()
-  const statuses = mcpManager.getAllServerStatuses()
+  const statuses = getMCPServerStatuses()
 
-  const servers = config.servers.map((server: any) => {
+  const servers = config.servers.map((server: MCPServerConfig) => {
     const status = statuses.find(s => s.name === server.name)
     return {
       ...server,

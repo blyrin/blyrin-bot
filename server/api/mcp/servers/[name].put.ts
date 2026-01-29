@@ -46,43 +46,13 @@ export default defineEventHandler(async (event) => {
   // 更新服务器配置
   const updatedServer = { ...existingServer, ...result.data } as MCPServerConfig
   updateMCPServer(name, updatedServer)
-  mcpManager.updateServerConfig(name, updatedServer)
 
-  // 检查是否需要重新连接
-  const enabledChanged = result.data.enabled !== undefined && result.data.enabled !== existingServer.enabled
-  const connectionConfigChanged = result.data.url !== undefined
-    || result.data.command !== undefined
-    || result.data.args !== undefined
-    || result.data.env !== undefined
-    || result.data.cwd !== undefined
-    || result.data.headers !== undefined
-    || result.data.transportType !== undefined
-
-  // 如果 enabled 状态改变或连接配置改变，处理连接/断开
-  if (enabledChanged || connectionConfigChanged) {
-    const shouldBeConnected = updatedServer.enabled && config.enabled
-
-    // 先断开现有连接
-    try {
-      await mcpManager.disconnectServer(name)
-    } catch {
-      // 忽略断开连接错误
-    }
-
-    // 如果应该连接，则重新连接
-    if (shouldBeConnected) {
-      mcpManager.addServer(updatedServer)
-      try {
-        await mcpManager.connectServer(name)
-      } catch (err) {
-        logger.error('MCP', `连接 ${name} 失败`, { error: String(err) })
-      }
-    }
-  }
+  // 重新初始化 MCP 客户端
+  await reconnectMCPClient()
 
   // 返回完整的 MCP 配置数据
   const updatedConfig = getMCPConfig()
-  const statuses = mcpManager.getAllServerStatuses()
+  const statuses = getMCPServerStatuses()
 
   const servers = updatedConfig.servers.map((server: MCPServerConfig) => {
     const status = statuses.find(s => s.name === server.name)

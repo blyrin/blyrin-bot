@@ -5,7 +5,7 @@ export default defineEventHandler((event) => {
   const path = event.path
 
   // 认证相关接口不需要校验
-  if (path === '/login') {
+  if (path.startsWith('/login')) {
     return
   }
   if (path.startsWith('/api/auth/')) {

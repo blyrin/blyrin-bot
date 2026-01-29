@@ -205,7 +205,7 @@ export interface MCPServerStreamableHTTPConfig {
   headers?: Record<string, string>;
 }
 
-// MCP 服务器配置 - SSE (旧版兼容)
+// MCP 服务器配置 - SSE
 export interface MCPServerSSEConfig {
   name: string;
   enabled: boolean;

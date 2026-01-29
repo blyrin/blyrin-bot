@@ -17,28 +17,14 @@ export default defineEventHandler(async (event) => {
   const { enabled } = result.data
 
   setMCPGlobalEnabled(enabled)
-  if (enabled) {
-    // 启用时，连接所有已启用的服务器
-    const config = getMCPConfig()
-    for (const server of config.servers) {
-      if (server.enabled) {
-        mcpManager.addServer(server)
-        try {
-          await mcpManager.connectServer(server.name)
-        } catch (err) {
-          logger.error('MCP', `连接 ${server.name} 失败`, { error: String(err) })
-        }
-      }
-    }
-  } else {
-    // 禁用时，断开所有连接
-    await mcpManager.disconnectAll()
-  }
+
+  // 重新初始化 MCP 客户端
+  await reconnectMCPClient()
 
   const config = getMCPConfig()
-  const statuses = mcpManager.getAllServerStatuses()
+  const statuses = getMCPServerStatuses()
 
-  const servers = config.servers.map((server: any) => {
+  const servers = config.servers.map((server: MCPServerConfig) => {
     const status = statuses.find(s => s.name === server.name)
     return {
       ...server,

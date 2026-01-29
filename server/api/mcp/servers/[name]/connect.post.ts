@@ -16,12 +16,11 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 添加服务器配置并连接
-  mcpManager.addServer(server)
-  await mcpManager.connectServer(name)
+  // 重新初始化 MCP 客户端
+  await reconnectMCPClient()
 
   // 返回完整的 MCP 配置数据
-  const statuses = mcpManager.getAllServerStatuses()
+  const statuses = getMCPServerStatuses()
 
   const servers = config.servers.map((s: MCPServerConfig) => {
     const status = statuses.find(st => st.name === s.name)

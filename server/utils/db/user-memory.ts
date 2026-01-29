@@ -41,14 +41,9 @@ export function getUserMemoryFromDb(groupId: number, userId: number): UserMemory
 export function saveUserMemoryToDb(memory: UserMemory): void {
   const db = getDatabase()
   const stmt = db.prepare(`
-      insert into user_memories (user_id, group_id, nicknames, traits, preferences, topics, last_seen, message_count)
-      values (?, ?, ?, ?, ?, ?, ?, ?)
-      on conflict(user_id, group_id) do update set nicknames     = excluded.nicknames,
-                                                   traits        = excluded.traits,
-                                                   preferences   = excluded.preferences,
-                                                   topics        = excluded.topics,
-                                                   last_seen     = excluded.last_seen,
-                                                   message_count = excluded.message_count
+    insert into user_memories (user_id, group_id, nicknames, traits, preferences, topics, last_seen, message_count)
+    values (?, ?, ?, ?, ?, ?, ?, ?) on conflict(user_id, group_id) do
+    update set nicknames = excluded.nicknames, traits = excluded.traits, preferences = excluded.preferences, topics = excluded.topics, last_seen = excluded.last_seen, message_count = excluded.message_count
   `)
   stmt.run(
     memory.userId,

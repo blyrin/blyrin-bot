@@ -168,7 +168,7 @@ async function handleMCPGlobalToggle(enabled: boolean) {
       body: { enabled },
     })
     if (res.success) {
-      mcpData.value = res.data
+      mcpData.value = res.data as MCPApiData
       toast.add({ title: enabled ? 'MCP 已启用' : 'MCP 已禁用', color: 'success' })
     }
   } catch {
@@ -229,7 +229,7 @@ async function handleAddServer() {
       body: serverConfig,
     })
     if (res.success) {
-      mcpData.value = res.data
+      mcpData.value = res.data as MCPApiData
       showAddServer.value = false
       resetServerForm()
       toast.add({ title: 'MCP 服务器已添加', color: 'success' })
@@ -283,7 +283,7 @@ async function handleUpdateServer() {
       body: updates,
     })
     if (res.success) {
-      mcpData.value = res.data
+      mcpData.value = res.data as MCPApiData
       editingServer.value = null
       resetServerForm()
       toast.add({ title: 'MCP 服务器已更新', color: 'success' })
@@ -308,7 +308,7 @@ async function handleRemoveServer() {
       method: 'DELETE',
     })
     if (res.success) {
-      mcpData.value = res.data
+      mcpData.value = res.data as MCPApiData
       toast.add({ title: 'MCP 服务器已删除', color: 'success' })
     }
   } catch {
@@ -325,7 +325,7 @@ async function handleConnectServer(serverName: string) {
       method: 'POST',
     })
     if (res.success) {
-      mcpData.value = res.data
+      mcpData.value = res.data as MCPApiData
       toast.add({ title: '服务器已连接', color: 'success' })
     } else {
       toast.add({ title: '连接失败', color: 'error' })
@@ -343,7 +343,7 @@ async function handleDisconnectServer(serverName: string) {
       method: 'POST',
     })
     if (res.success) {
-      mcpData.value = res.data
+      mcpData.value = res.data as MCPApiData
       toast.add({ title: '服务器已断开', color: 'success' })
     }
   } catch {
@@ -358,7 +358,7 @@ async function handleServerEnabledToggle(serverName: string, enabled: boolean) {
       body: { enabled },
     })
     if (res.success) {
-      mcpData.value = res.data
+      mcpData.value = res.data as MCPApiData
       toast.add({ title: enabled ? '服务器已启用' : '服务器已禁用', color: 'success' })
     }
   } catch {
@@ -373,7 +373,7 @@ async function handleToolStateToggle(serverName: string, toolName: string, enabl
       body: { enabled },
     })
     if (res.success) {
-      mcpData.value = res.data
+      mcpData.value = res.data as MCPApiData
     }
   } catch {
     toast.add({ title: '操作失败', color: 'error' })

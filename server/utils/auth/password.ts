@@ -22,11 +22,6 @@ export function hashPassword(password: string): string {
  * @returns 密码是否匹配
  */
 export function verifyPassword(password: string, storedHash: string): boolean {
-  // 兼容旧版明文密码（不包含冒号的是明文）
-  if (!storedHash.includes(':')) {
-    return password === storedHash
-  }
-
   const [salt, hash] = storedHash.split(':')
   if (!salt || !hash) {
     return false

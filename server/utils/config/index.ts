@@ -286,7 +286,7 @@ export function setExaConfig(exa: { baseUrl: string; apiKey: string }): ToolsCon
 // MCP 配置
 export function getMCPConfig(): MCPConfig {
   const config = readConfig()
-  // 确保 mcp 配置存在（兼容旧配置）
+  // 确保 mcp 配置存在
   if (!config.mcp) {
     return {
       enabled: false,

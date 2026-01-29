@@ -5,15 +5,17 @@
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev",
-    "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "typecheck": "nuxt prepare && pnpm exec nuxi typecheck"
   },
   "dependencies": {
+    "@langchain/core": "^1.1.17",
+    "@langchain/langgraph": "^1.1.2",
+    "@langchain/mcp-adapters": "^1.1.2",
+    "@langchain/openai": "^1.2.3",
     "@naplink/naplink": "^0.0.3",
     "@nuxt/ui": "4.4.0",
-    "eventsource": "^4.1.0",
     "nuxt": "^4.3.0",
     "sharp": "^0.34.5",
     "tailwindcss": "^4.1.18",

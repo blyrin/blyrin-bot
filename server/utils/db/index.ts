@@ -56,84 +56,176 @@ export function getDatabase(): DatabaseSync {
 function initializeTables(database: DatabaseSync): void {
   // 配置表（键值存储）
   database.exec(`
-      create table if not exists config
-      (
-          key        TEXT primary key,
-          value      TEXT    not null,
-          updated_at integer not null
-      )
+    create table if not exists config
+    (
+      key
+      TEXT
+      primary
+      key,
+      value
+      TEXT
+      not
+      null,
+      updated_at
+      integer
+      not
+      null
+    )
   `)
 
   // 群组上下文表
   database.exec(`
-      create table if not exists group_contexts
-      (
-          group_id     integer primary key,
-          messages     TEXT    not null default '[]',
-          last_updated integer not null
-      )
+    create table if not exists group_contexts
+    (
+      group_id
+      integer
+      primary
+      key,
+      messages
+      TEXT
+      not
+      null
+      default
+      '[]',
+      last_updated
+      integer
+      not
+      null
+    )
   `)
 
   // 群组记忆表
   database.exec(`
-      create table if not exists group_memories
-      (
-          group_id        integer primary key,
-          summary         TEXT    not null,
-          last_compressed integer not null
-      )
+    create table if not exists group_memories
+    (
+      group_id
+      integer
+      primary
+      key,
+      summary
+      TEXT
+      not
+      null,
+      last_compressed
+      integer
+      not
+      null
+    )
   `)
 
   // 用户记忆表
   database.exec(`
-      create table if not exists user_memories
-      (
-          user_id       integer not null,
-          group_id      integer not null,
-          nicknames     TEXT    not null default '[]',
-          traits        TEXT    not null default '[]',
-          preferences   TEXT    not null default '[]',
-          topics        TEXT    not null default '[]',
-          last_seen     integer not null,
-          message_count integer not null default 0,
-          primary key (user_id, group_id)
-      )
+    create table if not exists user_memories
+    (
+      user_id
+      integer
+      not
+      null,
+      group_id
+      integer
+      not
+      null,
+      nicknames
+      TEXT
+      not
+      null
+      default
+      '[]',
+      traits
+      TEXT
+      not
+      null
+      default
+      '[]',
+      preferences
+      TEXT
+      not
+      null
+      default
+      '[]',
+      topics
+      TEXT
+      not
+      null
+      default
+      '[]',
+      last_seen
+      integer
+      not
+      null,
+      message_count
+      integer
+      not
+      null
+      default
+      0,
+      primary
+      key
+    (
+      user_id,
+      group_id
+    ) )
   `)
 
   // 用户记忆索引
   database.exec(`
-      create index if not exists idx_user_memories_group on user_memories (group_id)
+    create index if not exists idx_user_memories_group on user_memories (group_id)
   `)
 
   // 消息图片表
   database.exec(`
-      create table if not exists message_images
-      (
-          id           integer primary key autoincrement,
-          group_id     integer not null,
-          message_id   integer not null,
-          user_id      integer,
-          image_index  integer not null,
-          content_type text    not null,
-          base64       text    not null,
-          is_animated  integer not null default 0,
-          created_at   integer not null
-      )
+    create table if not exists message_images
+    (
+      id
+      integer
+      primary
+      key
+      autoincrement,
+      group_id
+      integer
+      not
+      null,
+      message_id
+      integer
+      not
+      null,
+      user_id
+      integer,
+      image_index
+      integer
+      not
+      null,
+      content_type
+      text
+      not
+      null,
+      base64
+      text
+      not
+      null,
+      is_animated
+      integer
+      not
+      null
+      default
+      0,
+      created_at
+      integer
+      not
+      null
+    )
   `)
 
   database.exec(`
-      create index if not exists idx_message_images_group_message
-          on message_images (group_id, message_id)
+    create index if not exists idx_message_images_group_message on message_images (group_id, message_id)
   `)
 
   database.exec(`
-      create index if not exists idx_message_images_group
-          on message_images (group_id)
+    create index if not exists idx_message_images_group on message_images (group_id)
   `)
 
   database.exec(`
-      create unique index if not exists uq_message_images_message_index
-          on message_images (group_id, message_id, image_index)
+    create unique index if not exists uq_message_images_message_index on message_images (group_id, message_id, image_index)
   `)
 }
 
@@ -172,15 +264,10 @@ export function saveMessageImagesToDb(
   if (images.length === 0) return
   const database = getDatabase()
   const stmt = database.prepare(`
-      insert into message_images
-      (group_id, message_id, user_id, image_index, content_type, base64, is_animated, created_at)
-      values (?, ?, ?, ?, ?, ?, ?, ?)
-      on conflict(group_id, message_id, image_index) do update set
-          user_id = excluded.user_id,
-          content_type = excluded.content_type,
-          base64 = excluded.base64,
-          is_animated = excluded.is_animated,
-          created_at = excluded.created_at
+    insert into message_images (group_id, message_id, user_id, image_index, content_type, base64, is_animated,
+                                created_at)
+    values (?, ?, ?, ?, ?, ?, ?, ?) on conflict(group_id, message_id, image_index) do
+    update set user_id = excluded.user_id, content_type = excluded.content_type, base64 = excluded.base64, is_animated = excluded.is_animated, created_at = excluded.created_at
   `)
 
   const now = Date.now()
@@ -208,10 +295,11 @@ export function saveMessageImagesToDb(
 export function getMessageImagesFromDb(groupId: number, messageId: number): StoredImageRecord[] {
   const database = getDatabase()
   const stmt = database.prepare(`
-      select message_id, image_index, base64, content_type, is_animated
-      from message_images
-      where group_id = ? and message_id = ?
-      order by image_index asc
+    select message_id, image_index, base64, content_type, is_animated
+    from message_images
+    where group_id = ?
+      and message_id = ?
+    order by image_index asc
   `)
   const rows = stmt.all(groupId, messageId) as Array<{
     message_id: number
@@ -238,10 +326,11 @@ export function getMessageImagesByMessageIdsFromDb(
   const database = getDatabase()
   const placeholders = messageIds.map(() => '?').join(', ')
   const stmt = database.prepare(`
-      select message_id, image_index, base64, content_type, is_animated
-      from message_images
-      where group_id = ? and message_id in (${placeholders})
-      order by message_id asc, image_index asc
+    select message_id, image_index, base64, content_type, is_animated
+    from message_images
+    where group_id = ?
+      and message_id in (${placeholders})
+    order by message_id asc, image_index asc
   `)
   const rows = stmt.all(groupId, ...messageIds) as Array<{
     message_id: number
@@ -272,8 +361,10 @@ export function deleteMessageImagesFromDb(groupId: number, messageIds: number[])
   const database = getDatabase()
   const placeholders = messageIds.map(() => '?').join(', ')
   const stmt = database.prepare(`
-      delete from message_images
-      where group_id = ? and message_id in (${placeholders})
+    delete
+    from message_images
+    where group_id = ?
+      and message_id in (${placeholders})
   `)
   stmt.run(groupId, ...messageIds)
 }

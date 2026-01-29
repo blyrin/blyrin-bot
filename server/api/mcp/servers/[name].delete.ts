@@ -18,11 +18,13 @@ export default defineEventHandler(async (event) => {
 
   // 删除服务器
   deleteMCPServer(name)
-  await mcpManager.removeServer(name)
+
+  // 重新初始化 MCP 客户端
+  await reconnectMCPClient()
 
   // 返回完整的 MCP 配置数据
   const updatedConfig = getMCPConfig()
-  const statuses = mcpManager.getAllServerStatuses()
+  const statuses = getMCPServerStatuses()
 
   const servers = updatedConfig.servers.map((server: MCPServerConfig) => {
     const status = statuses.find(s => s.name === server.name)

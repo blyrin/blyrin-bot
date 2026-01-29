@@ -49,7 +49,7 @@ function generateToken(): string {
 export function login(password: string): string | null {
   const config = getAuthConfig()
 
-  // 使用安全的密码验证（支持哈希和明文兼容）
+  // 使用安全的密码验证
   if (!verifyPassword(password, config.password)) {
     return null
   }
