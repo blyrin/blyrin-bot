@@ -1,7 +1,5 @@
-import path from 'node:path'
 import { NapLink } from '@naplink/naplink'
-import type { SenderInfo } from './response-decider'
-import { buildFullMessageContent, extractImageFiles, extractMessageMeta, shouldReply } from './response-decider'
+import { buildMessageContent, extractImageSources, extractMessageMeta, shouldReply } from './response-decider'
 import { isGroupInCooldown, scheduleReply } from './message-aggregator'
 import {
   abortCurrentProcessing,
@@ -23,7 +21,6 @@ interface GroupMessageEvent {
   group_id: number;
   user_id: number;
   message: MessageSegment[];
-  raw_message: string;
   sender: {
     user_id: number;
     nickname: string;
@@ -58,12 +55,6 @@ let connectPromise: Promise<void> | null = null
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-const DIRECT_IMAGE_SOURCE_PATTERN = /^(https?:\/\/|file:\/\/|data:|base64:\/\/)/i
-
-function isDirectImageSource(value: string): boolean {
-  return DIRECT_IMAGE_SOURCE_PATTERN.test(value) || path.isAbsolute(value)
 }
 
 function getReconnectDelay(): number {
@@ -107,42 +98,12 @@ async function storeIncomingImages(
   userId: number,
   message: MessageSegment[],
 ): Promise<void> {
-  if (!client) return
-  const hasImages = message.some(seg => seg.type === 'image')
-  if (!hasImages) return
+  const images = extractImageSources(message)
+    .filter(img => isSupportedSource(img.url))
+    .map(img => ({ url: img.url, imageIndex: img.index }))
 
-  try {
-    await client.hydrateMessage(message)
-  } catch (err) {
-    logger.warn('Bot', '补全图片直链失败', { error: String(err) })
-  }
-
-  const imageFiles = extractImageFiles(message)
-  if (imageFiles.length === 0) return
-
-  const imageSources: Array<{ url: string; imageIndex: number }> = []
-  for (const [index, file] of imageFiles.entries()) {
-    const source = String(file || '').trim()
-    if (!source) continue
-
-    if (isDirectImageSource(source)) {
-      imageSources.push({ url: source, imageIndex: index })
-      continue
-    }
-
-    try {
-      const imageInfo = await client.getImage(source)
-      const resolved = String(imageInfo?.url || imageInfo?.file || '')
-      if (resolved) {
-        imageSources.push({ url: resolved, imageIndex: index })
-      }
-    } catch (err) {
-      logger.error('Bot', '获取图片URL失败', { error: String(err), file: source })
-    }
-  }
-
-  if (imageSources.length > 0) {
-    await storeMessageImagesFromUrls(groupId, messageId, userId, imageSources)
+  if (images.length > 0) {
+    await storeMessageImagesFromUrls(groupId, messageId, userId, images)
   }
 }
 
@@ -163,60 +124,33 @@ async function handleGroupMessage(event: GroupMessageEvent): Promise<void> {
   }
 
   // 更新用户消息计数
-  const userMemory = incrementMessageCount(groupId, userId, nickname)
+  incrementMessageCount(groupId, userId, nickname)
 
-  logger.info('Bot', `收到群消息`, {
-    groupId,
-    userId,
-    nickname,
-    rawMessage: event.raw_message.slice(0, 100),
-  })
-
-  // 提取消息元数据（@ 和引用信息，保留所有信息包括 @bot）
-  const messageMeta = extractMessageMeta(event.message, selfId!)
-
-  // 构建发送者信息
-  const senderInfo: SenderInfo = {
-    userId: userId,
-    nickname: nickname,
-  }
+  // 提取消息元数据（@ 和引用信息）
+  const messageMeta = extractMessageMeta(event.message)
 
   // 获取当前上下文中所有用户ID，用于构建名称映射
   const context = getContext(groupId)
-  const contextUserIds = new Set<number>()
+  const contextUserIds = new Set<number>([userId])
   for (const msg of context.messages) {
-    if (msg.userId) {
-      contextUserIds.add(msg.userId)
-    }
-    // 也收集消息中 @ 的用户
-    if (msg.meta?.atUsers) {
-      for (const atUserId of msg.meta.atUsers) {
-        contextUserIds.add(atUserId)
-      }
-    }
+    if (msg.userId) contextUserIds.add(msg.userId)
+    msg.meta?.atUsers?.forEach(id => contextUserIds.add(id))
   }
-  // 添加当前消息的发送者和 @ 的用户
-  contextUserIds.add(userId)
-  if (messageMeta?.atUsers) {
-    for (const atUserId of messageMeta.atUsers) {
-      contextUserIds.add(atUserId)
-    }
-  }
+  messageMeta?.atUsers?.forEach(id => contextUserIds.add(id))
 
   // 构建用户名称映射
   const userNameMap = buildUserNameMap(groupId, Array.from(contextUserIds))
-  // 确保当前发送者的名称在映射中
   userNameMap.set(userId, nickname)
 
-  // 构建包含元数据的完整消息内容（传入上下文用于关联引用）
-  const fullContent = buildFullMessageContent(event.message, messageMeta, senderInfo, userNameMap, context.messages)
+  // 构建消息内容（保留图片位置）
+  const content = buildMessageContent(event.message, messageMeta, { userId, nickname }, userNameMap, context.messages)
 
   // 无论是否回复，都将消息添加到上下文
   const userMessage: ChatMessage = {
     role: 'user',
-    content: fullContent,
+    content,
     messageId: event.message_id,
-    userId: userId,
+    userId,
     timestamp: Date.now(),
     meta: messageMeta,
   }
@@ -352,22 +286,49 @@ async function processReply(triggerEvent: GroupMessageEvent, _aggregatedEvents: 
     }
 
     // 构建聊天选项
-    const chatOptions: import('../ai').ChatOptions = {
+    const chatOptions: ChatOptions = {
       toolContext,
       onIntermediateOutput,
       abortSignal,
     }
 
-    // 如果支持视觉功能，提取图片
+    // 如果支持视觉功能，提取所有用户消息的图片
     const aiConfig = getAIConfig()
-    let result: import('../ai').ChatResult
+    let result: ChatResult
 
     if (aiConfig.provider.supportsVision) {
-      const imageUrls = getMessageImageDataUrls(groupId, triggerEvent.message_id)
-      if (imageUrls.length > 0) {
-        result = await chatWithVision(contextMessages, imageUrls, systemPrompt, groupId, chatOptions)
+      // 找出所有包含图片占位符的用户消息
+      const messagesWithImages = contextMessages.filter((msg) => {
+        if (msg.role !== 'user' || !msg.messageId) return false
+        const content = typeof msg.content === 'string'
+          ? msg.content
+          : msg.content?.map(c => c.type === 'text' ? c.text : '').join('') ?? ''
+        return /\[IMAGE:\d+\]/.test(content)
+      })
+
+      // 构建 messageId -> imageUrls 映射
+      const imageMap: Record<number, string[]> = {}
+      let hasAnimated = false
+
+      for (const msg of messagesWithImages) {
+        const msgId = msg.messageId!
+        const { dataUrls, hasAnimated: animated } = getMessageImageDataUrlsExpanded(groupId, msgId)
+        if (dataUrls.length > 0) {
+          imageMap[msgId] = dataUrls
+          if (animated) hasAnimated = true
+        }
+      }
+
+      // 如果有动图，在系统提示词中添加说明
+      let finalSystemPrompt = systemPrompt
+      if (hasAnimated) {
+        finalSystemPrompt += '\n\n[注意：用户发送的动图已抽帧为多张静态图片展示，请综合理解其内容]'
+      }
+
+      if (Object.keys(imageMap).length > 0) {
+        result = await chatWithVision(contextMessages, imageMap, finalSystemPrompt, groupId, chatOptions)
       } else {
-        result = await chat(contextMessages, systemPrompt, groupId, chatOptions)
+        result = await chat(contextMessages, finalSystemPrompt, groupId, chatOptions)
       }
     } else {
       result = await chat(contextMessages, systemPrompt, groupId, chatOptions)
@@ -517,8 +478,11 @@ async function doConnect(): Promise<void> {
     scheduleReconnect()
   })
 
-  client.on('message.group', (data) => {
-    handleGroupMessage(data as unknown as GroupMessageEvent).catch(err => {
+  client.on('message.group', (data: GroupMessageEvent) => {
+    if (!data) return
+    delete (data as any).raw_message
+    logger.debug('Bot', '收到群消息', data)
+    handleGroupMessage(data).catch(err => {
       logger.error('Bot', '消息处理器出错', { error: String(err) })
     })
   })

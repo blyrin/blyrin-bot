@@ -10,17 +10,6 @@ export function getToolContextFromConfig(config?: RunnableConfig): ToolContext |
   return (config?.configurable?.toolContext as ToolContext) ?? null
 }
 
-// 获取所有已注册的工具信息（用于管理界面）
-export function getAllToolInfos(): ToolInfo[] {
-  const config = getToolsConfig()
-
-  return ALL_TOOLS_META.map(tool => ({
-    name: tool.name,
-    description: tool.description,
-    enabled: config.tools[tool.name] ?? false,
-  }))
-}
-
 // ============ 内置工具定义 ============
 
 /**
@@ -33,10 +22,7 @@ export const exaSearchTool = tool(
     const exaConfig = toolsConfig.exa
 
     if (!exaConfig?.baseUrl || !exaConfig?.apiKey) {
-      return JSON.stringify({
-        success: false,
-        message: 'Exa 搜索未配置，请在 AI 设置中配置 Exa API 地址和密钥',
-      })
+      return 'Exa 搜索未配置，请在 AI 设置中配置 Exa API 地址和密钥'
     }
 
     let numResults = num_results || 5
@@ -92,17 +78,10 @@ export const exaSearchTool = tool(
         return text
       }).join('\n\n')
 
-      return JSON.stringify({
-        success: true,
-        message: `搜索 "${query}" 找到 ${data.results.length} 条结果:\n\n${formattedResults}`,
-        data: data.results,
-      })
+      return `搜索 "${query}" 找到 ${data.results.length} 条结果:\n\n${formattedResults}`
     } catch (error) {
       logger.error('Tools', `Exa 搜索失败`, { query, error: String(error) })
-      return JSON.stringify({
-        success: false,
-        message: `搜索失败: ${String(error)}`,
-      })
+      return `搜索失败: ${String(error)}`
     }
   },
   {
@@ -125,10 +104,7 @@ export const sendLikeTool = tool(
     const client = getClient()
 
     if (!client) {
-      return JSON.stringify({
-        success: false,
-        message: '机器人未连接，无法执行点赞操作',
-      })
+      return '机器人未连接，无法执行点赞操作'
     }
 
     let likeCount = times || 1
@@ -143,21 +119,14 @@ export const sendLikeTool = tool(
         context,
       })
 
-      return JSON.stringify({
-        success: true,
-        message: `已成功给用户 ${user_id} 点了 ${likeCount} 个赞`,
-        data: { userId: user_id, times: likeCount },
-      })
+      return `已成功给用户 ${user_id} 点了 ${likeCount} 个赞`
     } catch (error) {
       logger.error('Tools', `点赞失败`, {
         targetUserId: user_id,
         times: likeCount,
         error: String(error),
       })
-      return JSON.stringify({
-        success: false,
-        message: `点赞失败: ${String(error)}`,
-      })
+      return `点赞失败: ${String(error)}`
     }
   },
   {
@@ -179,17 +148,11 @@ export const groupPokeTool = tool(
     const client = getClient()
 
     if (!client) {
-      return JSON.stringify({
-        success: false,
-        message: '机器人未连接，无法执行戳一戳操作',
-      })
+      return '机器人未连接，无法执行戳一戳操作'
     }
 
     if (!context) {
-      return JSON.stringify({
-        success: false,
-        message: '缺少上下文信息',
-      })
+      return '缺少上下文信息'
     }
 
     try {
@@ -200,20 +163,13 @@ export const groupPokeTool = tool(
         context,
       })
 
-      return JSON.stringify({
-        success: true,
-        message: `已成功戳了用户 ${user_id}`,
-        data: { userId: user_id, groupId: context.groupId },
-      })
+      return `已成功戳了用户 ${user_id}`
     } catch (error) {
       logger.error('Tools', `戳一戳失败`, {
         targetUserId: user_id,
         error: String(error),
       })
-      return JSON.stringify({
-        success: false,
-        message: `戳一戳失败: ${String(error)}`,
-      })
+      return `戳一戳失败: ${String(error)}`
     }
   },
   {
@@ -234,17 +190,11 @@ export const getGroupHonorTool = tool(
     const client = getClient()
 
     if (!client) {
-      return JSON.stringify({
-        success: false,
-        message: '机器人未连接，无法查询群荣誉',
-      })
+      return '机器人未连接，无法查询群荣誉'
     }
 
     if (!context) {
-      return JSON.stringify({
-        success: false,
-        message: '缺少上下文信息',
-      })
+      return '缺少上下文信息'
     }
 
     const honorType = honor_type || 'all'
@@ -301,21 +251,14 @@ export const getGroupHonorTool = tool(
 
       const message = result.length > 0 ? result.join('\n') : '暂无群荣誉信息'
 
-      return JSON.stringify({
-        success: true,
-        message,
-        data: honorInfo,
-      })
+      return message
     } catch (error) {
       logger.error('Tools', `查询群荣誉失败`, {
         groupId: context.groupId,
         honorType,
         error: String(error),
       })
-      return JSON.stringify({
-        success: false,
-        message: `查询群荣誉失败: ${String(error)}`,
-      })
+      return `查询群荣誉失败: ${String(error)}`
     }
   },
   {
@@ -337,24 +280,15 @@ export const setEssenceMessageTool = tool(
     const client = getClient()
 
     if (!client) {
-      return JSON.stringify({
-        success: false,
-        message: '机器人未连接，无法设置群精华',
-      })
+      return '机器人未连接，无法设置群精华'
     }
 
     if (!context) {
-      return JSON.stringify({
-        success: false,
-        message: '缺少上下文信息',
-      })
+      return '缺少上下文信息'
     }
 
     if (!isBotAdmin(context.groupId)) {
-      return JSON.stringify({
-        success: false,
-        message: '机器人不是群管理员，无法设置群精华',
-      })
+      return '机器人不是群管理员，无法设置群精华'
     }
 
     try {
@@ -365,20 +299,13 @@ export const setEssenceMessageTool = tool(
         context,
       })
 
-      return JSON.stringify({
-        success: true,
-        message: `已成功将消息 ${message_id} 设为群精华`,
-        data: { messageId: message_id, groupId: context.groupId },
-      })
+      return `已成功将消息 ${message_id} 设为群精华`
     } catch (error) {
       logger.error('Tools', `设置群精华失败`, {
         messageId: message_id,
         error: String(error),
       })
-      return JSON.stringify({
-        success: false,
-        message: `设置群精华失败: ${String(error)}`,
-      })
+      return `设置群精华失败: ${String(error)}`
     }
   },
   {
@@ -399,17 +326,11 @@ export const deleteMessageTool = tool(
     const client = getClient()
 
     if (!client) {
-      return JSON.stringify({
-        success: false,
-        message: '机器人未连接，无法撤回消息',
-      })
+      return '机器人未连接，无法撤回消息'
     }
 
     if (!context) {
-      return JSON.stringify({
-        success: false,
-        message: '缺少上下文信息',
-      })
+      return '缺少上下文信息'
     }
 
     const isAdmin = isBotAdmin(context.groupId)
@@ -423,11 +344,7 @@ export const deleteMessageTool = tool(
         isAdmin,
       })
 
-      return JSON.stringify({
-        success: true,
-        message: `已成功撤回消息 ${message_id}`,
-        data: { messageId: message_id, groupId: context.groupId },
-      })
+      return `已成功撤回消息 ${message_id}`
     } catch (error) {
       const errorMsg = String(error)
 
@@ -436,20 +353,14 @@ export const deleteMessageTool = tool(
           messageId: message_id,
           error: errorMsg,
         })
-        return JSON.stringify({
-          success: false,
-          message: '撤回消息失败：机器人不是群管理员，无法撤回他人消息',
-        })
+        return '撤回消息失败：机器人不是群管理员，无法撤回他人消息'
       }
 
       logger.error('Tools', `撤回消息失败`, {
         messageId: message_id,
         error: errorMsg,
       })
-      return JSON.stringify({
-        success: false,
-        message: `撤回消息失败: ${errorMsg}`,
-      })
+      return `撤回消息失败: ${errorMsg}`
     }
   },
   {
@@ -507,3 +418,14 @@ export const ALL_TOOLS_META: Array<{ name: string; description: string }> = [
     description: '撤回消息。撤回他人消息需要管理员权限。',
   },
 ]
+
+// 获取所有已注册的工具信息（用于管理界面）
+export function getAllToolInfos(): ToolInfo[] {
+  const config = getToolsConfig()
+
+  return ALL_TOOLS_META.map(tool => ({
+    name: tool.name,
+    description: tool.description,
+    enabled: config.tools[tool.name] ?? false,
+  }))
+}

@@ -11,7 +11,6 @@ interface GroupMessageEvent {
   group_id: number
   user_id: number
   message: MessageSegment[]
-  raw_message: string
   sender: {
     user_id: number
     nickname: string

@@ -1,16 +1,31 @@
 import { ChatOpenAI } from '@langchain/openai'
 import { addMessages, entrypoint, task } from '@langchain/langgraph'
 import type { BaseMessage } from '@langchain/core/messages'
-import { AIMessage, SystemMessage, ToolMessage } from '@langchain/core/messages'
+import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from '@langchain/core/messages'
 import type { StructuredToolInterface } from '@langchain/core/tools'
 import { tool } from '@langchain/core/tools'
 import type { RunnableConfig } from '@langchain/core/runnables'
 import { z } from 'zod'
 import { builtinToolsMap, getToolContextFromConfig } from './tools'
 import { getEnabledMCPTools } from './mcp-client'
+import { chatMessagesToLangChain, formatMessagesAsText } from './memory'
 
-// Agent 调用选项
-export interface AgentInvokeOptions {
+// 聊天选项
+export interface ChatOptions {
+  toolContext?: ToolContext
+  onIntermediateOutput?: (content: string) => Promise<void>
+  abortSignal?: AbortSignal
+}
+
+// 聊天结果
+export interface ChatResult {
+  content: string
+  toolMessages?: ChatMessage[]
+  aborted?: boolean
+}
+
+// Agent 调用选项（内部使用）
+interface AgentInvokeOptions {
   systemPrompt: string
   messages: BaseMessage[]
   toolContext?: ToolContext
@@ -18,8 +33,8 @@ export interface AgentInvokeOptions {
   abortSignal?: AbortSignal
 }
 
-// Agent 调用结果
-export interface AgentResult {
+// Agent 调用结果（内部使用）
+interface AgentResult {
   content: string
   toolMessages: ChatMessage[]
   aborted: boolean
@@ -58,7 +73,7 @@ function createCallToolTask(tools: StructuredToolInterface[]) {
 
     if (!selectedTool) {
       return new ToolMessage({
-        content: JSON.stringify({ success: false, message: `工具 ${toolCall.name} 不存在` }),
+        content: `工具 ${toolCall.name} 不存在`,
         tool_call_id: toolCall.id || '',
       })
     }
@@ -72,7 +87,7 @@ function createCallToolTask(tools: StructuredToolInterface[]) {
       })
     } catch (error) {
       return new ToolMessage({
-        content: JSON.stringify({ success: false, message: `工具执行失败: ${String(error)}` }),
+        content: `工具执行失败: ${String(error)}`,
         tool_call_id: toolCall.id || '',
       })
     }
@@ -123,10 +138,7 @@ function createSubagentTool(
     async ({ task: taskDesc, tools: allowedToolNames, max_rounds }, config?: RunnableConfig) => {
       const context = getToolContextFromConfig(config)
       if (!context) {
-        return JSON.stringify({
-          success: false,
-          message: '缺少上下文信息',
-        })
+        return '缺少上下文信息'
       }
 
       let maxRounds = max_rounds || 10
@@ -142,10 +154,7 @@ function createSubagentTool(
       }
 
       if (filteredTools.length === 0) {
-        return JSON.stringify({
-          success: false,
-          message: '没有可用的工具，无法执行任务',
-        })
+        return '没有可用的工具，无法执行任务'
       }
 
       logger.info('Subagent', `开始执行任务`, {
@@ -197,20 +206,10 @@ function createSubagentTool(
           messageCount: result.messages.length,
         })
 
-        return JSON.stringify({
-          success: true,
-          message: content || '任务已完成，但没有输出内容',
-          data: {
-            toolsUsed: Array.from(toolsUsed),
-            rounds: Math.ceil(result.messages.length / 2),
-          },
-        })
+        return content || '任务已完成，但没有输出内容'
       } catch (error) {
         logger.error('Subagent', `任务执行失败`, { error: String(error) })
-        return JSON.stringify({
-          success: false,
-          message: `子代理执行失败: ${String(error)}`,
-        })
+        return `子代理执行失败: ${String(error)}`
       }
     },
     {
@@ -293,11 +292,7 @@ export async function invokeAgent(options: AgentInvokeOptions): Promise<AgentRes
   const tools = getEnabledTools(llm)
   const hasTools = tools.length > 0 && toolContext
 
-  logger.debug('Agent', '开始调用 Agent', {
-    messageCount: messages.length,
-    toolCount: tools.length,
-    hasToolContext: !!toolContext,
-  })
+  logger.debug('Agent', '开始调用 Agent', { messages, tools, toolContext })
 
   // 构建完整消息列表
   const fullMessages: BaseMessage[] = [
@@ -392,7 +387,7 @@ export async function invokeAgent(options: AgentInvokeOptions): Promise<AgentRes
 /**
  * 使用 LLM 进行简单对话（无工具）
  */
-export async function simpleLLMCall(
+async function simpleLLMCall(
   messages: BaseMessage[],
   options?: {
     model?: string
@@ -403,4 +398,228 @@ export async function simpleLLMCall(
   const llm = createLLM(options)
   const response = await llm.invoke(messages)
   return typeof response.content === 'string' ? response.content : ''
+}
+
+/**
+ * 核心聊天函数
+ */
+export async function chat(
+  messages: ChatMessage[],
+  systemPrompt: string,
+  groupId?: number,
+  options?: ChatOptions,
+): Promise<ChatResult> {
+  const langChainMessages = chatMessagesToLangChain(messages, groupId)
+
+  const result = await invokeAgent({
+    systemPrompt,
+    messages: langChainMessages,
+    toolContext: options?.toolContext,
+    onIntermediateOutput: options?.onIntermediateOutput,
+    abortSignal: options?.abortSignal,
+  })
+
+  return {
+    content: result.content,
+    toolMessages: result.toolMessages.length > 0 ? result.toolMessages : undefined,
+    aborted: result.aborted,
+  }
+}
+
+// 多模态内容类型
+type MultimodalContent = Array<{ type: 'text'; text: string } | {
+  type: 'image_url';
+  image_url: { url: string }
+}>
+
+/**
+ * 构建单条消息的多模态内容
+ * 将消息中的 [IMAGE:N] 占位符替换为实际图片
+ */
+function buildMultimodalContent(
+  message: ChatMessage,
+  imageUrls: string[],
+  groupId?: number,
+): MultimodalContent {
+  const content = message.content
+  const multimodalContent: MultimodalContent = []
+
+  // 添加时间和消息ID前缀
+  const timeStr = formatTimestamp(message.timestamp)
+  const metaPrefix = [
+    timeStr ? `[${timeStr}]` : '',
+    message.messageId ? `[messageId:${message.messageId}]` : '',
+  ].filter(Boolean).join(' ')
+
+  if (metaPrefix) {
+    multimodalContent.push({ type: 'text', text: metaPrefix + ' ' })
+  }
+
+  // 解析内容，替换图片占位符
+  if (typeof content === 'string') {
+    // 字符串内容，查找并替换 [IMAGE:index] 占位符
+    const parts = content.split(/(\[IMAGE:\d+\])/)
+    for (const part of parts) {
+      const match = part.match(/^\[IMAGE:(\d+)\]$/)
+      if (match) {
+        const index = parseInt(match[1]!, 10)
+        if (index < imageUrls.length) {
+          multimodalContent.push({
+            type: 'image_url',
+            image_url: { url: imageUrls[index]! },
+          })
+        }
+      } else if (part) {
+        multimodalContent.push({ type: 'text', text: part })
+      }
+    }
+  } else if (Array.isArray(content)) {
+    // 数组内容，遍历处理
+    for (const item of content) {
+      if (item.type === 'text' && item.text) {
+        // 检查是否是图片占位符
+        const match = item.text.match(/^\[IMAGE:(\d+)\]$/)
+        if (match) {
+          const index = parseInt(match[1]!, 10)
+          if (index < imageUrls.length) {
+            multimodalContent.push({
+              type: 'image_url',
+              image_url: { url: imageUrls[index]! },
+            })
+          }
+        } else {
+          multimodalContent.push({ type: 'text', text: item.text })
+        }
+      } else if (item.type === 'image_url' && item.image_url?.url) {
+        multimodalContent.push({ type: 'image_url', image_url: { url: item.image_url.url } })
+      }
+    }
+  }
+
+  // 确保至少有一个内容项
+  if (multimodalContent.length === 0) {
+    multimodalContent.push({ type: 'text', text: '' })
+  }
+
+  return multimodalContent
+}
+
+/**
+ * 带视觉能力的聊天
+ * imageMap: messageId -> dataUrls 的映射，每条消息的 [IMAGE:N] 索引独立
+ */
+export async function chatWithVision(
+  messages: ChatMessage[],
+  imageMap: Record<number, string[]>,
+  systemPrompt: string,
+  groupId?: number,
+  options?: ChatOptions,
+): Promise<ChatResult> {
+  const config = getAIConfig()
+
+  if (!config.provider.supportsVision || Object.keys(imageMap).length === 0) {
+    return chat(messages, systemPrompt, groupId, options)
+  }
+
+  // 转换所有消息，处理每条消息中的图片占位符
+  const langChainMessages: BaseMessage[] = []
+
+  for (const message of messages) {
+    if (message.role === 'system') {
+      langChainMessages.push(new SystemMessage(message.content as string))
+      continue
+    }
+
+    if (message.role === 'assistant') {
+      langChainMessages.push(new AIMessage(message.content as string ?? ''))
+      continue
+    }
+
+    if (message.role === 'user') {
+      const imageUrls = message.messageId ? imageMap[message.messageId] ?? [] : []
+
+      if (imageUrls.length === 0) {
+        // 没有图片，使用普通转换
+        langChainMessages.push(...chatMessagesToLangChain([message], groupId))
+        continue
+      }
+
+      // 有图片，构建多模态内容
+      const multimodalContent = buildMultimodalContent(message, imageUrls, groupId)
+      langChainMessages.push(new HumanMessage({ content: multimodalContent }))
+      continue
+    }
+
+    // 其他类型消息（tool 等）使用普通转换
+    langChainMessages.push(...chatMessagesToLangChain([message], groupId))
+  }
+
+  const result = await invokeAgent({
+    systemPrompt,
+    messages: langChainMessages,
+    toolContext: options?.toolContext,
+    onIntermediateOutput: options?.onIntermediateOutput,
+    abortSignal: options?.abortSignal,
+  })
+
+  return {
+    content: result.content,
+    toolMessages: result.toolMessages.length > 0 ? result.toolMessages : undefined,
+    aborted: result.aborted,
+  }
+}
+
+/**
+ * 压缩上下文
+ */
+export async function compressContext(messages: ChatMessage[], groupId?: number): Promise<string> {
+  const config = getAIConfig()
+  const prompts = getPromptsConfig()
+
+  const content = await simpleLLMCall(
+    [
+      new SystemMessage('你是一个对话摘要助手，请简洁地总结对话要点。'),
+      new HumanMessage(`${prompts.compression.instruction}\n\n${formatMessagesAsText(messages, groupId)}`),
+    ],
+    {
+      model: config.compression.model,
+      maxTokens: config.compression.maxTokens,
+      temperature: 0.3,
+    },
+  )
+
+  return content
+}
+
+/**
+ * 提取用户信息
+ */
+export async function extractUserInfo(
+  messages: ChatMessage[],
+  existingInfo: string,
+  groupId?: number,
+): Promise<string> {
+  const prompt = `根据以下对话，提取或更新用户的特征信息（如性格、偏好、常聊话题等）。
+
+已有信息：
+${existingInfo || '无'}
+
+最近对话：
+${formatMessagesAsText(messages, groupId)}
+
+请用简洁的要点形式按已有信息格式输出更新后的用户特征`
+
+  const config = getAIConfig()
+
+  return await simpleLLMCall(
+    [
+      new SystemMessage('你是一个用户画像分析助手，请从对话中提取用户特征。'),
+      new HumanMessage(prompt),
+    ],
+    {
+      model: config.compression.model,
+      maxTokens: 200,
+      temperature: 0.3,
+    },
+  )
 }
