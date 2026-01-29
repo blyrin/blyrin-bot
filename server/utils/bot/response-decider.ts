@@ -84,6 +84,7 @@ export function extractMessageMeta(message: MessageSegment[]): MessageMeta | und
 export type UserNameMap = Map<number, string>;
 
 // 构建完整的消息内容，保留图片位置
+// 相邻的文本合并为一个 text 块，只有图片才会拆分消息
 export function buildMessageContent(
   message: MessageSegment[],
   meta: MessageMeta | undefined,
@@ -102,7 +103,7 @@ export function buildMessageContent(
       ? (typeof replyMsg.content === 'string' ? replyMsg.content : replyMsg.content.find(c => c.type === 'text')?.text ?? '')
       : ''
     prefixParts.push(replyText
-      ? `[引用: "${replyText.length > 100 ? replyText.slice(0, 100) + '...' : replyText}"]`
+      ? `[引用: "${replyText.length > 50 ? replyText.slice(0, 50) + '...' : replyText}"]`
       : `[引用消息#${meta.replyTo.messageId}]`)
   }
 
@@ -113,18 +114,32 @@ export function buildMessageContent(
     }).join(' '))
   }
 
-  result.push({ type: 'text', text: prefixParts.join(' ') + ' ' })
+  const prefix = prefixParts.join(' ') + ' '
 
-  // 按顺序添加文本和图片占位符
+  // 按顺序处理消息段，相邻文本合并，图片单独成块
+  let currentText = prefix
   let imageIndex = 0
+
   for (const seg of message) {
     if (seg.type === 'text') {
       const text = String(seg.data.text || '').trim()
-      if (text) result.push({ type: 'text', text })
+      if (text) {
+        currentText += text
+      }
     } else if (seg.type === 'image') {
+      // 遇到图片，先把累积的文本推入结果
+      if (currentText) {
+        result.push({ type: 'text', text: currentText })
+        currentText = ''
+      }
       result.push({ type: 'text', text: `[IMAGE:${imageIndex++}]` })
     }
   }
 
-  return result.length > 1 ? result : [{ type: 'text', text: prefixParts.join(' ') }]
+  // 推入剩余的文本
+  if (currentText) {
+    result.push({ type: 'text', text: currentText })
+  }
+
+  return result.length > 0 ? result : [{ type: 'text', text: prefix.trim() }]
 }

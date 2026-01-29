@@ -435,6 +435,7 @@ type MultimodalContent = Array<{ type: 'text'; text: string } | {
 /**
  * 构建单条消息的多模态内容
  * 将消息中的 [IMAGE:N] 占位符替换为实际图片
+ * 原则：相邻的文本合并为一个 text 块，只有图片才会拆分
  */
 function buildMultimodalContent(
   message: ChatMessage,
@@ -444,15 +445,22 @@ function buildMultimodalContent(
   const content = message.content
   const multimodalContent: MultimodalContent = []
 
-  // 添加时间和消息ID前缀
+  // 构建时间和消息ID前缀
   const timeStr = formatTimestamp(message.timestamp)
   const metaPrefix = [
     timeStr ? `[${timeStr}]` : '',
     message.messageId ? `[messageId:${message.messageId}]` : '',
   ].filter(Boolean).join(' ')
 
-  if (metaPrefix) {
-    multimodalContent.push({ type: 'text', text: metaPrefix + ' ' })
+  // 用于累积相邻文本
+  let currentText = metaPrefix ? metaPrefix + ' ' : ''
+
+  // 辅助函数：将累积的文本推入结果
+  const flushText = () => {
+    if (currentText) {
+      multimodalContent.push({ type: 'text', text: currentText })
+      currentText = ''
+    }
   }
 
   // 解析内容，替换图片占位符
@@ -464,13 +472,14 @@ function buildMultimodalContent(
       if (match) {
         const index = parseInt(match[1]!, 10)
         if (index < imageUrls.length) {
+          flushText()
           multimodalContent.push({
             type: 'image_url',
             image_url: { url: imageUrls[index]! },
           })
         }
       } else if (part) {
-        multimodalContent.push({ type: 'text', text: part })
+        currentText += part
       }
     }
   } else if (Array.isArray(content)) {
@@ -482,19 +491,24 @@ function buildMultimodalContent(
         if (match) {
           const index = parseInt(match[1]!, 10)
           if (index < imageUrls.length) {
+            flushText()
             multimodalContent.push({
               type: 'image_url',
               image_url: { url: imageUrls[index]! },
             })
           }
         } else {
-          multimodalContent.push({ type: 'text', text: item.text })
+          currentText += item.text
         }
       } else if (item.type === 'image_url' && item.image_url?.url) {
+        flushText()
         multimodalContent.push({ type: 'image_url', image_url: { url: item.image_url.url } })
       }
     }
   }
+
+  // 推入剩余的文本
+  flushText()
 
   // 确保至少有一个内容项
   if (multimodalContent.length === 0) {
