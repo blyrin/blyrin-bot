@@ -11,7 +11,7 @@ export interface LogEntry {
   category: string
   message: string
   timestamp: number
-  data?: Record<string, unknown>
+  data?: unknown
 }
 
 type LogListener = (entry: LogEntry) => void
@@ -24,19 +24,19 @@ class Logger {
   private listeners: Set<LogListener> = new Set()
   private idCounter = 0
 
-  debug(category: string, message: string, data?: Record<string, unknown>) {
+  debug(category: string, message: string, data?: unknown) {
     this.log('debug', category, message, data)
   }
 
-  info(category: string, message: string, data?: Record<string, unknown>) {
+  info(category: string, message: string, data?: unknown) {
     this.log('info', category, message, data)
   }
 
-  warn(category: string, message: string, data?: Record<string, unknown>) {
+  warn(category: string, message: string, data?: unknown) {
     this.log('warn', category, message, data)
   }
 
-  error(category: string, message: string, data?: Record<string, unknown>) {
+  error(category: string, message: string, data?: unknown) {
     this.log('error', category, message, data)
   }
 
@@ -86,7 +86,7 @@ class Logger {
     level: LogLevel,
     category: string,
     message: string,
-    data?: Record<string, unknown>,
+    data?: unknown,
   ): LogEntry {
     return {
       id: `${Date.now()}-${++this.idCounter}`,
@@ -98,7 +98,7 @@ class Logger {
     }
   }
 
-  private log(level: LogLevel, category: string, message: string, data?: Record<string, unknown>) {
+  private log(level: LogLevel, category: string, message: string, data: unknown) {
     const entry = this.createEntry(level, category, message, data)
 
     // 存储日志
