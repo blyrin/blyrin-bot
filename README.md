@@ -1,6 +1,6 @@
 # Blyrin Bot
 
-基于 Nuxt.js 的 QQ 群聊 AI 机器人，通过 NapLink SDK 连接 NapCat，使用 OpenAI 兼容 API 进行对话。
+基于 Nuxt.js 的 QQ 群聊 AI  机器人，通过 NapLink SDK 连接 NapCat，使用 OpenAI 兼容 API 进行对话。
 
 ## 技术栈
 
